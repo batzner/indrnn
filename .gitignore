@@ -167,3 +167,6 @@ venv.bak/
 
 
 # End of https://www.gitignore.io/api/python,pycharm
+
+# Custom stuff
+.idea
