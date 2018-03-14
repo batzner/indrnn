@@ -50,7 +50,7 @@ def main():
         # Generate new input data
         inputs, targets = get_batch()
         loss, _ = sess.run([loss_op, optimize],
-                                    {inputs_ph: inputs, targets_ph: targets})
+                           {inputs_ph: inputs, targets_ph: targets})
         losses.append(loss)
         step += 1
 

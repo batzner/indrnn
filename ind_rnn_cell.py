@@ -81,7 +81,6 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
     where @ is the matrix multiplication and * is the element-wise
     multiplication of two vectors.
     """
-
     gate_inputs = math_ops.matmul(inputs, self._input_kernel)
     gate_inputs = math_ops.add(gate_inputs,
                                math_ops.multiply(state, self._recurrent_kernel))
