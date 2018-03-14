@@ -1,10 +1,11 @@
-from tensorflow.python.ops import math_ops, init_ops, array_ops, nn_ops
+from tensorflow.python.ops import math_ops, init_ops, array_ops, nn_ops, \
+  clip_ops
 from tensorflow.python.ops.rnn_cell_impl import _LayerRNNCell, \
   _WEIGHTS_VARIABLE_NAME, _BIAS_VARIABLE_NAME
 from tensorflow.python.layers import base as base_layer
 
 
-class BasicRNNCell(_LayerRNNCell):
+class IndRNNCell(_LayerRNNCell):
   """The most basic RNN cell.
   Args:
     num_units: int, The number of units in the RNN cell.
@@ -17,14 +18,16 @@ class BasicRNNCell(_LayerRNNCell):
       cases.
   """
 
-  def __init__(self, num_units, activation=None, reuse=None, name=None):
-    super(BasicRNNCell, self).__init__(_reuse=reuse, name=name)
+  def __init__(self, num_units, recurrent_clip=None, activation=None,
+               reuse=None, name=None):
+    super(IndRNNCell, self).__init__(_reuse=reuse, name=name)
 
     # Inputs must be 2-dimensional.
     self.input_spec = base_layer.InputSpec(ndim=2)
 
     self._num_units = num_units
-    self._activation = activation or math_ops.tanh
+    self._recurrent_clip = recurrent_clip
+    self._activation = activation or nn_ops.relu
 
   @property
   def state_size(self):
@@ -40,9 +43,17 @@ class BasicRNNCell(_LayerRNNCell):
                        % inputs_shape)
 
     input_depth = inputs_shape[1].value
-    self._kernel = self.add_variable(
-      _WEIGHTS_VARIABLE_NAME,
-      shape=[input_depth + self._num_units, self._num_units])
+    self._input_kernel = self.add_variable(
+      "input_%s" % _WEIGHTS_VARIABLE_NAME,
+      shape=[input_depth, self._num_units])
+    self._recurrent_kernel = self.add_variable(
+      "recurrent_%s" % _WEIGHTS_VARIABLE_NAME,
+      shape=[self._num_units])
+
+    if self._recurrent_clip:
+      self._recurrent_kernel = clip_ops.clip_by_value(self._recurrent_kernel,
+                                                      self._recurrent_clip[0],
+                                                      self._recurrent_clip[1])
     self._bias = self.add_variable(
       _BIAS_VARIABLE_NAME,
       shape=[self._num_units],
@@ -51,10 +62,12 @@ class BasicRNNCell(_LayerRNNCell):
     self.built = True
 
   def call(self, inputs, state):
-    """Most basic RNN: output = new_state = act(W * input + U * state + B)."""
+    """Most basic RNN: output = new_state = act(W * input + U (.) state + B)."""
 
-    gate_inputs = math_ops.matmul(
-      array_ops.concat([inputs, state], 1), self._kernel)
+    gate_inputs = math_ops.matmul(inputs, self._input_kernel)
+    gate_inputs = math_ops.add(gate_inputs,
+                               math_ops.multiply(gate_inputs,
+                                                 self._recurrent_kernel))
     gate_inputs = nn_ops.bias_add(gate_inputs, self._bias)
     output = self._activation(gate_inputs)
     return output, output

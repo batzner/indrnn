@@ -1,17 +1,22 @@
 import tensorflow as tf
 import numpy as np
+from tensorflow.python.ops.rnn_cell_impl import MultiRNNCell
+
+from ind_rnn_cell import IndRNNCell
 
 SEQUENCE_LENGTH = 10
 BATCH_SIZE = 50
 NUM_UNITS = 128
-LEARNING_RATE = 0.002
-
+LEARNING_RATE = 0.0002
+NUM_LAYERS = 2
 
 def main():
   inputs_ph = tf.placeholder(tf.float32, shape=(BATCH_SIZE, SEQUENCE_LENGTH, 2))
   targets_ph = tf.placeholder(tf.float32, shape=BATCH_SIZE)
 
-  cell = tf.contrib.rnn.BasicRNNCell(NUM_UNITS)
+  recurrent_clip = (-pow(2, 1 / SEQUENCE_LENGTH), pow(2, 1 / SEQUENCE_LENGTH))
+  cell = MultiRNNCell([IndRNNCell(NUM_UNITS, recurrent_clip),
+                       IndRNNCell(NUM_UNITS, recurrent_clip)])
   output, _ = tf.nn.dynamic_rnn(cell, inputs_ph, dtype=tf.float32)
   last = output[:, -1, :]
 
@@ -56,6 +61,19 @@ def get_batch():
   targets = np.sum(np.multiply(add_values, add_indices), axis=1)
   return inputs, targets
 
+def print_trainable_parameters():
+  total_parameters = 0
+  for variable in tf.trainable_variables():
+    # shape is an array of tf.Dimension
+    shape = variable.get_shape()
+    print(variable.name)
+    print(shape)
+    variable_parameters = 1
+    for dim in shape:
+      variable_parameters *= dim.value
+    print(variable_parameters)
+    total_parameters += variable_parameters
+  print(total_parameters)
 
 if __name__ == "__main__":
   main()
