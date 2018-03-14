@@ -8,7 +8,7 @@ In IndRNNs, neurons in recurrent layers are independent from each other. The bas
 
 The IndRNN 
 - can be used efficiently with ReLU activation functions making it easier to stack multiple recurrent layers without saturating gradients
-- allows for better interpretability, as the neurons in one layer are independent from each other
+- allows for better interpretability, as neurons in the same layer are independent from each other
 - prevents vanishing and exploding gradients by regulating each neuron's recurrent weight
 
 ## Usage
