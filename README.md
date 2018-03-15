@@ -21,8 +21,8 @@ from ind_rnn_cell import IndRNNCell
 # Regulate each neuron's recurrent weight as recommended in the paper
 recurrent_max = pow(2, 1 / TIME_STEPS)
 
-cell = MultiRNNCell([IndRNNCell(128, recurrent_max),
-                     IndRNNCell(128, recurrent_max)])
+cell = MultiRNNCell([IndRNNCell(128, recurrent_max_abs=recurrent_max),
+                     IndRNNCell(128, recurrent_max_abs=recurrent_max)])
 output, state = tf.nn.dynamic_rnn(cell, input_data, dtype=tf.float32)
 ...
 ```
