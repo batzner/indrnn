@@ -4,11 +4,11 @@ Simple TensorFlow implementation of [Independently Recurrent Neural Network (Ind
 
 ## Summary
 
-In IndRNNs, neurons in recurrent layers are independent from each other. The basic RNN calculates the hidden state `h` with `h = act(W @ input + U @ state + b)`, where `@` is the matrix multiplication. IndRNNs use an element-wise vector multiplication `u * state`. Each neuron's hidden state is independent from the other neurons. 
+In IndRNNs, neurons in recurrent layers are independent from each other. The basic RNN calculates the hidden state `h` with `h = act(W * input + U * state + b)`. IndRNNs use an element-wise vector multiplication `u * state` meaning each neuron has a single recurrent weight connected to its last hidden state. 
 
 The IndRNN 
 - can be used efficiently with ReLU activation functions making it easier to stack multiple recurrent layers without saturating gradients
-- allows for better interpretability, as the neurons in one layer are independent from each other
+- allows for better interpretability, as neurons in the same layer are independent from each other
 - prevents vanishing and exploding gradients by regulating each neuron's recurrent weight
 
 ## Usage
