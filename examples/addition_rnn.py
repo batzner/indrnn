@@ -7,12 +7,11 @@ steps.
 """
 import tensorflow as tf
 import numpy as np
-from tensorflow.python.ops.rnn_cell_impl import MultiRNNCell
 
 from ind_rnn_cell import IndRNNCell
 
 # Parameters taken from https://arxiv.org/abs/1803.04831
-TIME_STEPS = 1000
+TIME_STEPS = 5000
 NUM_UNITS = 128
 LEARNING_RATE_INIT = 0.0002
 LEARNING_RATE_DECAY_STEPS = 20000
@@ -29,8 +28,10 @@ def main():
   targets_ph = tf.placeholder(tf.float32, shape=BATCH_SIZE)
 
   # Build the graph
-  cell = MultiRNNCell([IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX),
-                       IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX)])
+  cell = tf.nn.rnn_cell.MultiRNNCell([
+    IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX) for _ in
+    range(NUM_LAYERS)
+  ])
 
   output, state = tf.nn.dynamic_rnn(cell, inputs_ph, dtype=tf.float32)
   last = output[:, -1, :]
