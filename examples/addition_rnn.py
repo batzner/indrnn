@@ -1,8 +1,9 @@
 """Module using IndRNNCell to solve the addition problem
 
 The addition problem is stated in https://arxiv.org/abs/1803.04831. The
-hyper-parameters are taken from that paper as well. The network should
-converge to a MSE around zero after 1500-3000 steps.
+hyper-parameters are taken from that paper as well. The network should converge
+to a MSE around zero after 1500-20000 steps, depending on the number of time
+steps.
 """
 import tensorflow as tf
 import numpy as np
@@ -11,9 +12,10 @@ from tensorflow.python.ops.rnn_cell_impl import MultiRNNCell
 from ind_rnn_cell import IndRNNCell
 
 # Parameters taken from https://arxiv.org/abs/1803.04831
-TIME_STEPS = 100
+TIME_STEPS = 1000
 NUM_UNITS = 128
-LEARNING_RATE = 0.0002
+LEARNING_RATE_INIT = 0.0002
+LEARNING_RATE_DECAY_STEPS = 20000
 NUM_LAYERS = 2
 RECURRENT_MAX = pow(2, 1 / TIME_STEPS)
 
@@ -38,7 +40,13 @@ def main():
   prediction = tf.squeeze(tf.matmul(last, weight) + bias)
 
   loss_op = tf.losses.mean_squared_error(tf.squeeze(targets_ph), prediction)
-  optimize = tf.train.AdamOptimizer(LEARNING_RATE).minimize(loss_op)
+
+  global_step = tf.Variable(0, trainable=False)
+  learning_rate = tf.train.exponential_decay(LEARNING_RATE_INIT, global_step,
+                                             LEARNING_RATE_DECAY_STEPS, 0.1,
+                                             staircase=True)
+  optimizer = tf.train.AdamOptimizer(learning_rate)
+  optimize = optimizer.minimize(loss_op, global_step=global_step)
 
   # Train the model
   with tf.Session() as sess:
@@ -53,9 +61,7 @@ def main():
                            {inputs_ph: inputs, targets_ph: targets})
         losses.append(loss)
         step += 1
-
-      print(
-        "Step [x100] {} MSE {}".format(int(step / 100), np.mean(losses)))
+      print("Step [x100] {} MSE {}".format(int(step / 100), np.mean(losses)))
 
 
 def get_batch():
