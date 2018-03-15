@@ -27,8 +27,8 @@ def main():
   targets_ph = tf.placeholder(tf.float32, shape=BATCH_SIZE)
 
   # Build the graph
-  cell = MultiRNNCell([IndRNNCell(NUM_UNITS, RECURRENT_MAX),
-                       IndRNNCell(NUM_UNITS, RECURRENT_MAX)])
+  cell = MultiRNNCell([IndRNNCell(NUM_UNITS, recurrent_max=RECURRENT_MAX),
+                       IndRNNCell(NUM_UNITS, recurrent_max=RECURRENT_MAX)])
 
   output, state = tf.nn.dynamic_rnn(cell, inputs_ph, dtype=tf.float32)
   last = output[:, -1, :]

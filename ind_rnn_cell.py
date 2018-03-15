@@ -18,10 +18,12 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
 
   Args:
     num_units: int, The number of units in the RNN cell.
-    recurrent_max: float, maximum absolute value of each recurrent weight. For
-      relu activation, use pow(2, 1/timesteps). The IndRNN paper gives further
-      recommendations for other activations functions. If None, recurrent
-      weights will not be clipped. Default: None.
+    recurrent_min: float, minimum absolute value of each recurrent weight. This
+      prevents vanishing gradients.
+    recurrent_max: float, maximum absolute value of each recurrent weight. This
+      prevents exploding gradients. For relu activation, use
+      pow(2, 1/timesteps) is recommended. If None, recurrent weights will not
+      be clipped. Default: None.
     activation: Nonlinearity to use.  Default: `relu`.
     reuse: (optional) Python boolean describing whether to reuse variables
       in an existing scope.  If not `True`, and the existing scope already has
@@ -31,14 +33,15 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       cases.
   """
 
-  def __init__(self, num_units, recurrent_max=None, activation=None,
-               reuse=None, name=None):
+  def __init__(self, num_units, recurrent_min=0, recurrent_max=None,
+               activation=None, reuse=None, name=None):
     super(IndRNNCell, self).__init__(_reuse=reuse, name=name)
 
     # Inputs must be 2-dimensional.
     self.input_spec = base_layer.InputSpec(ndim=2)
 
     self._num_units = num_units
+    self._recurrent_min = recurrent_min
     self._recurrent_max = recurrent_max
     self._activation = activation or nn_ops.relu
 
@@ -63,6 +66,16 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
     self._recurrent_kernel = self.add_variable(
       "recurrent_%s" % rnn_cell_impl._WEIGHTS_VARIABLE_NAME,
       shape=[self._num_units])
+
+    # Clip the absolute values of the recurrent weights
+    if self._recurrent_min:
+      abs_kernel = math_ops.abs(self._recurrent_kernel)
+      min_abs_kernel = math_ops.minimum(abs_kernel, self._recurrent_min)
+      self._recurrent_kernel = math_ops.multiply(
+        math_ops.sign(self._recurrent_kernel),
+        min_abs_kernel
+      )
+
     if self._recurrent_max:
       self._recurrent_kernel = clip_ops.clip_by_value(self._recurrent_kernel,
                                                       -self._recurrent_max,
@@ -76,10 +89,9 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
     self.built = True
 
   def call(self, inputs, state):
-    """IndRNN: output = new_state = act(W @ input + u * state + b),
+    """IndRNN: output = new_state = act(W * input + u (*) state + b),
 
-    where @ is the matrix multiplication and * is the element-wise
-    multiplication of two vectors.
+    where * is the matrix multiplication and (*) is the Hadamard product.
     """
     gate_inputs = math_ops.matmul(inputs, self._input_kernel)
     gate_inputs = math_ops.add(gate_inputs,
