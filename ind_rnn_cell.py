@@ -7,7 +7,7 @@ from tensorflow.python.ops import rnn_cell_impl
 from tensorflow.python.layers import base as base_layer
 
 
-class IndRNNCell(rnn_cell_impl._LayerRNNCell):
+class IndRNNCell(rnn_cell_impl.RNNCell):
   """Independently RNN Cell. Adapted from `rnn_cell_impl.BasicRNNCell
 
   The implementation is based on:
@@ -60,13 +60,16 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       "input_%s" % rnn_cell_impl._WEIGHTS_VARIABLE_NAME,
       shape=[input_depth, self._num_units])
 
+    recurrent_init = init_ops.random_uniform_initializer(
+        minval=0.0,
+        maxval=1.0 if self._recurrent_max is None else self._recurrent_max
+    )
+
     self._recurrent_kernel = self.add_variable(
       "recurrent_%s" % rnn_cell_impl._WEIGHTS_VARIABLE_NAME,
-      shape=[self._num_units])
+      shape=[self._num_units], initializer=recurrent_init)
     if self._recurrent_max:
-      self._recurrent_kernel = clip_ops.clip_by_value(self._recurrent_kernel,
-                                                      -self._recurrent_max,
-                                                      self._recurrent_max)
+      self._recurrent_kernel = clip_ops.clip_by_value(self._recurrent_kernel, 0, self._recurrent_max)
 
     self._bias = self.add_variable(
       rnn_cell_impl._BIAS_VARIABLE_NAME,
