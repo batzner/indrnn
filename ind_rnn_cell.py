@@ -74,7 +74,9 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       "recurrent_%s" % rnn_cell_impl._WEIGHTS_VARIABLE_NAME,
       shape=[self._num_units], initializer=self._recurrent_initializer)
     if self._recurrent_max:
-      self._recurrent_kernel = clip_ops.clip_by_value(self._recurrent_kernel, 0, self._recurrent_max)
+      self._recurrent_kernel = clip_ops.clip_by_value(self._recurrent_kernel,
+                                                      -self._recurrent_max,
+                                                      self._recurrent_max)
 
     self._bias = self.add_variable(
       rnn_cell_impl._BIAS_VARIABLE_NAME,
