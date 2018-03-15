@@ -18,16 +18,14 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
 
   Args:
     num_units: int, The number of units in the RNN cell.
-    recurrent_min: float, minimum absolute value of each recurrent weight. This
-      prevents vanishing gradients.
-    recurrent_max: float, maximum absolute value of each recurrent weight. This
-      prevents exploding gradients. For relu activation, use
-      pow(2, 1/timesteps) is recommended. If None, recurrent weights will not
-      be clipped. Default: None.
+    recurrent_min_abs: float, minimum absolute value of each recurrent weight.
+    recurrent_max_abs: float or None, maximum absolute value of each recurrent
+      weight. For ReLU activation, pow(2, 1/timesteps) is recommended. If None,
+      recurrent weights will not be clipped. Default: None.
     recurrent_initializer: (optional) The initializer to use for the recurrent
       weights. The default is a uniform distribution in the range [-1, 1] if
-      `recurrent_max` is not set, or in [-recurrent_max, recurrent_max] if it
-      is.
+      `recurrent_max_abs` is not set, or in [-recurrent_max_abs,
+      recurrent_max_abs] if it is.
     activation: Nonlinearity to use.  Default: `relu`.
     reuse: (optional) Python boolean describing whether to reuse variables
       in an existing scope.  If not `True`, and the existing scope already has
@@ -37,7 +35,7 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       cases.
   """
 
-  def __init__(self, num_units, recurrent_min=0, recurrent_max=None,
+  def __init__(self, num_units, recurrent_min_abs=0, recurrent_max_abs=None,
                recurrent_initializer=None, activation=None, reuse=None,
                name=None):
     super(IndRNNCell, self).__init__(_reuse=reuse, name=name)
@@ -46,8 +44,8 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
     self.input_spec = base_layer.InputSpec(ndim=2)
 
     self._num_units = num_units
-    self._recurrent_min = recurrent_min
-    self._recurrent_max = recurrent_max
+    self._recurrent_min_abs = recurrent_min_abs
+    self._recurrent_max_abs = recurrent_max_abs
     self._recurrent_initializer = recurrent_initializer
     self._activation = activation or nn_ops.relu
 
@@ -70,28 +68,34 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       shape=[input_depth, self._num_units])
 
     if self._recurrent_initializer is None:
-      self._recurrent_initializer = init_ops.random_uniform_initializer(
-        minval=-1.0 if self._recurrent_max is None else -self._recurrent_max,
-        maxval=1.0 if self._recurrent_max is None else self._recurrent_max
-      )
+      if self._recurrent_max_abs:
+        self._recurrent_initializer = init_ops.random_uniform_initializer(
+          minval=-self._recurrent_max_abs,
+          maxval=self._recurrent_max_abs
+        )
+      else:
+        self._recurrent_initializer = init_ops.random_uniform_initializer(
+          minval=-1.0,
+          maxval=1.0
+        )
 
     self._recurrent_kernel = self.add_variable(
       "recurrent_%s" % rnn_cell_impl._WEIGHTS_VARIABLE_NAME,
       shape=[self._num_units], initializer=self._recurrent_initializer)
 
     # Clip the absolute values of the recurrent weights
-    if self._recurrent_min:
+    if self._recurrent_min_abs:
       abs_kernel = math_ops.abs(self._recurrent_kernel)
-      min_abs_kernel = math_ops.minimum(abs_kernel, self._recurrent_min)
+      min_abs_kernel = math_ops.maximum(abs_kernel, self._recurrent_min_abs)
       self._recurrent_kernel = math_ops.multiply(
         math_ops.sign(self._recurrent_kernel),
         min_abs_kernel
       )
 
-    if self._recurrent_max:
+    if self._recurrent_max_abs:
       self._recurrent_kernel = clip_ops.clip_by_value(self._recurrent_kernel,
-                                                      -self._recurrent_max,
-                                                      self._recurrent_max)
+                                                      -self._recurrent_max_abs,
+                                                      self._recurrent_max_abs)
 
     self._bias = self.add_variable(
       rnn_cell_impl._BIAS_VARIABLE_NAME,
