@@ -22,6 +22,9 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       relu activation, use pow(2, 1/timesteps). The IndRNN paper gives further
       recommendations for other activations functions. If None, recurrent
       weights will not be clipped. Default: None.
+    recurrent_initializer: (optional) The initializer to use for the recurrent
+      weights. The default is a uniform distribution in the range [0, 1] if
+      `recurrent_max` is not set, or in [0, recurrent_max] if it is.
     activation: Nonlinearity to use.  Default: `relu`.
     reuse: (optional) Python boolean describing whether to reuse variables
       in an existing scope.  If not `True`, and the existing scope already has
@@ -31,8 +34,8 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       cases.
   """
 
-  def __init__(self, num_units, recurrent_max=None, activation=None,
-               reuse=None, name=None):
+  def __init__(self, num_units, recurrent_max=None, recurrent_initializer=None,
+               activation=None, reuse=None, name=None):
     super(IndRNNCell, self).__init__(_reuse=reuse, name=name)
 
     # Inputs must be 2-dimensional.
@@ -40,6 +43,7 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
 
     self._num_units = num_units
     self._recurrent_max = recurrent_max
+    self._recurrent_initializer = recurrent_initializer
     self._activation = activation or nn_ops.relu
 
   @property
@@ -60,9 +64,15 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       "input_%s" % rnn_cell_impl._WEIGHTS_VARIABLE_NAME,
       shape=[input_depth, self._num_units])
 
+    if self._recurrent_initializer is None:
+        self._recurrent_initializer = init_ops.random_uniform_initializer(
+            minval=0.0,
+            maxval=1.0 if self._recurrent_max is None else self._recurrent_max
+        )
+
     self._recurrent_kernel = self.add_variable(
       "recurrent_%s" % rnn_cell_impl._WEIGHTS_VARIABLE_NAME,
-      shape=[self._num_units])
+      shape=[self._num_units], initializer=self._recurrent_initializer)
     if self._recurrent_max:
       self._recurrent_kernel = clip_ops.clip_by_value(self._recurrent_kernel,
                                                       -self._recurrent_max,
