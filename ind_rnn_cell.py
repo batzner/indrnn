@@ -30,8 +30,9 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       Default: None.
     recurrent_initializer: (optional) The initializer to use for the recurrent
       weights. The default is a uniform distribution in the range `[-1, 1]` if
-      `recurrent_max_abs` is not set, or in
-      `[-recurrent_max_abs, recurrent_max_abs]` if it is.
+      `recurrent_max_abs` is not set or in
+      `[-recurrent_max_abs, recurrent_max_abs]` if it is and
+      `recurrent_max_abs < 1`.
     activation: Nonlinearity to use.  Default: `relu`.
     reuse: (optional) Python boolean describing whether to reuse variables
       in an existing scope.  If not `True`, and the existing scope already has
@@ -41,8 +42,13 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       cases.
   """
 
-  def __init__(self, num_units, recurrent_min_abs=0, recurrent_max_abs=None,
-               recurrent_initializer=None, activation=None, reuse=None,
+  def __init__(self,
+               num_units,
+               recurrent_min_abs=0,
+               recurrent_max_abs=None,
+               recurrent_initializer=None,
+               activation=None,
+               reuse=None,
                name=None):
     super(IndRNNCell, self).__init__(_reuse=reuse, name=name)
 
@@ -74,16 +80,16 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
         shape=[input_depth, self._num_units])
 
     if self._recurrent_initializer is None:
-      if self._recurrent_max_abs:
-        self._recurrent_initializer = init_ops.random_uniform_initializer(
-            minval=-self._recurrent_max_abs,
-            maxval=self._recurrent_max_abs
-        )
-      else:
-        self._recurrent_initializer = init_ops.random_uniform_initializer(
-            minval=-1.0,
-            maxval=1.0
-        )
+      # Initialize the recurrent weights uniformly in [-max_abs, max_abs] or
+      # [-1, 1] if max_abs exceeds 1
+      init_bound = 1.0
+      if self._recurrent_max_abs and self._recurrent_max_abs < init_bound:
+        init_bound = self._recurrent_max_abs
+
+      self._recurrent_initializer = init_ops.random_uniform_initializer(
+          minval=-init_bound,
+          maxval=init_bound
+      )
 
     self._recurrent_kernel = self.add_variable(
         "recurrent_kernel",
