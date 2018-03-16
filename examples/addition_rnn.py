@@ -11,7 +11,7 @@ import numpy as np
 from ind_rnn_cell import IndRNNCell
 
 # Parameters taken from https://arxiv.org/abs/1803.04831
-TIME_STEPS = 5000
+TIME_STEPS = 100
 NUM_UNITS = 128
 LEARNING_RATE_INIT = 0.0002
 LEARNING_RATE_DECAY_STEPS = 20000
@@ -32,17 +32,20 @@ def main():
     IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX) for _ in
     range(NUM_LAYERS)
   ])
+  # cell = tf.nn.rnn_cell.BasicLSTMCell(NUM_UNITS) uncomment this for LSTM runs
 
   output, state = tf.nn.dynamic_rnn(cell, inputs_ph, dtype=tf.float32)
   last = output[:, -1, :]
 
-  weight = tf.Variable(tf.truncated_normal([NUM_UNITS, 1], stddev=0.01))
-  bias = tf.Variable(tf.constant(0.1, shape=[1]))
+  weight = tf.get_variable("softmax_weight", shape=[NUM_UNITS, 1])
+  bias = tf.get_variable("softmax_bias", shape=[1],
+                         initializer=tf.constant_initializer(0.1))
   prediction = tf.squeeze(tf.matmul(last, weight) + bias)
 
   loss_op = tf.losses.mean_squared_error(tf.squeeze(targets_ph), prediction)
 
-  global_step = tf.Variable(0, trainable=False)
+  global_step = tf.get_variable("global_step", shape=[], trainable=False,
+                                initializer=tf.zeros_initializer)
   learning_rate = tf.train.exponential_decay(LEARNING_RATE_INIT, global_step,
                                              LEARNING_RATE_DECAY_STEPS, 0.1,
                                              staircase=True)

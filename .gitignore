@@ -171,4 +171,4 @@ venv.bak/
 # Custom stuff
 .idea
 local
-tmp.py
+.DS_Store

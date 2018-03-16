@@ -28,7 +28,13 @@ output, state = tf.nn.dynamic_rnn(cell, input_data, dtype=tf.float32)
 ```
 ## Experiments in the paper
 
-See [examples/addition_rnn.py](https://github.com/batzner/indrnn/blob/master/examples/addition_rnn.py) for a script reconstructing the "Adding Problem" from the paper. More experiments, such as Sequential MNIST, will follow in the next days. 
+See [examples/addition_rnn.py](https://github.com/batzner/indrnn/blob/master/examples/addition_rnn.py) for a script reproducing the "Adding Problem" from the paper. Below are the results reproduced with the `addition_rnn.py` code.
+
+![https://github.com/batzner/indrnn/raw/master/img/addition/TAll.png](https://github.com/batzner/indrnn/raw/master/img/addition/TAll.png)
+
+For 100, 500 and 1000 time steps, the behavior is similar to Figure 2 in the paper. For 5000 time steps the IndRNN does not converge. My best guess is that this is due to different initialization values for the recurrent, input and softmax weights. These are not mentioned in the paper and have been found to [make a big difference](https://github.com/batzner/indrnn/issues/1).
+ 
+More experiments, such as Sequential MNIST, will follow in the next days.
 
 ## Requirements
 - Python 3.4+
