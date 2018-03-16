@@ -23,8 +23,9 @@ BATCH_SIZE = 50
 
 
 def main():
-  # Generate the dataset directly in the computational graph
-  inputs, targets = get_batch_variables()
+  # Placeholders for training data
+  inputs_ph = tf.placeholder(tf.float32, shape=(BATCH_SIZE, TIME_STEPS, 2))
+  targets_ph = tf.placeholder(tf.float32, shape=BATCH_SIZE)
 
   # Build the graph
   cell = tf.nn.rnn_cell.MultiRNNCell([
@@ -33,7 +34,7 @@ def main():
   ])
   # cell = tf.nn.rnn_cell.BasicLSTMCell(NUM_UNITS) uncomment this for LSTM runs
 
-  output, state = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32)
+  output, state = tf.nn.dynamic_rnn(cell, inputs_ph, dtype=tf.float32)
   last = output[:, -1, :]
 
   weight = tf.get_variable("softmax_weight", shape=[NUM_UNITS, 1])
@@ -41,7 +42,7 @@ def main():
                          initializer=tf.constant_initializer(0.1))
   prediction = tf.squeeze(tf.matmul(last, weight) + bias)
 
-  loss_op = tf.losses.mean_squared_error(tf.squeeze(targets), prediction)
+  loss_op = tf.losses.mean_squared_error(tf.squeeze(targets_ph), prediction)
 
   global_step = tf.get_variable("global_step", shape=[], trainable=False,
                                 initializer=tf.zeros_initializer)
@@ -58,29 +59,32 @@ def main():
     while True:
       losses = []
       for _ in range(100):
-        loss, _ = sess.run([loss_op, optimize])
+        # Generate new input data
+        inputs, targets = get_batch()
+        loss, _ = sess.run([loss_op, optimize],
+                           {inputs_ph: inputs, targets_ph: targets})
         losses.append(loss)
         step += 1
       print("Step [x100] {} MSE {}".format(int(step / 100), np.mean(losses)))
 
 
-def get_batch_variables():
-  """Generate the adding problem dataset in the computational graph"""
-  input_values = tf.random_uniform([BATCH_SIZE, TIME_STEPS])
+def get_batch():
+  """Generate the adding problem dataset"""
+  # Build the first sequence
+  add_values = np.random.rand(BATCH_SIZE, TIME_STEPS)
 
-  # Build the input indices by choosing two random integers (one per half) and
-  # concatenating their one-hot-encodings
+  # Build the second sequence with one 1 in each half and 0s otherwise
+  add_indices = np.zeros_like(add_values)
   half = int(TIME_STEPS / 2)
-  input_index_first = tf.random_uniform([BATCH_SIZE], 0, half - 1, tf.int32)
-  input_index_second = tf.random_uniform([BATCH_SIZE], 0, half - 1, tf.int32)
-  input_indices = tf.concat([tf.one_hot(input_index_first, half),
-                              tf.one_hot(input_index_second, half)], axis=1)
+  for i in range(BATCH_SIZE):
+    first_half = np.random.randint(half)
+    second_half = np.random.randint(half, TIME_STEPS)
+    add_indices[i, [first_half, second_half]] = 1
 
-  targets = tf.reduce_sum(tf.multiply(input_values, input_indices), axis=1)
   # Zip the values and indices in a third dimension:
-  inputs = tf.stack([input_values, input_indices], axis=-1)
   # inputs has the shape (batch_size, time_steps, 2)
-
+  inputs = np.dstack((add_values, add_indices))
+  targets = np.sum(np.multiply(add_values, add_indices), axis=1)
   return inputs, targets
 
 
