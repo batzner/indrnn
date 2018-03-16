@@ -34,9 +34,9 @@ def main():
   output, state = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32)
   last = output[:, -1, :]
 
-  weight = tf.Variable(
-    tf.truncated_normal([NUM_UNITS, NUM_CLASSES], stddev=0.01))
-  bias = tf.Variable(tf.constant(0.1, shape=[NUM_CLASSES]))
+  weight = tf.get_variable("softmax_weight", shape=[NUM_UNITS, NUM_CLASSES])
+  bias = tf.get_variable("softmax_bias", shape=[NUM_CLASSES],
+                         initializer=tf.constant_initializer(0.1))
   logits = tf.matmul(last, weight) + bias
 
   loss_op = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -63,8 +63,10 @@ def main():
       losses.append(loss)
       accuracies.append(accuracy)
       step += 1
-    print("Step [x100] {} Loss {} Acc {}"
-          .format(int(step / 100), np.mean(losses), np.mean(accuracy)))
+
+    #
+    print("Step {} Loss {} Acc {}"
+          .format(step, np.mean(losses), np.mean(accuracy)))
 
 
 def get_mnist_inputs(sess):

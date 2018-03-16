@@ -14,19 +14,22 @@ from __future__ import print_function
 
 from tensorflow.python import keras
 from tensorflow.python.keras import Sequential, initializers
-from tensorflow.python.keras._impl.keras.layers import Activation
-from tensorflow.python.keras._impl.keras.optimizers import RMSprop
+from tensorflow.python.keras._impl.keras.layers import Activation, \
+  BatchNormalization
+from tensorflow.python.keras._impl.keras.optimizers import RMSprop, Adam
 from tensorflow.python.keras.layers import SimpleRNN
+from tensorflow.python.keras.layers import RNN
 from tensorflow.python.keras.datasets import mnist
 from tensorflow.python.layers.core import Dense
 
+from ind_rnn_cell_keras import IndRNNCell
+
 batch_size = 32
 num_classes = 10
-epochs = 200
-hidden_units = 100
+epochs = 2000
+hidden_units = 128
 
-learning_rate = 1e-6
-clip_norm = 1.0
+learning_rate = 2e-4
 
 # the data, split between train and test sets
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
@@ -47,16 +50,25 @@ y_test = keras.utils.to_categorical(y_test, num_classes)
 
 print('Evaluate IRNN...')
 model = Sequential()
-model.add(SimpleRNN(hidden_units,
-                    kernel_initializer=initializers.RandomNormal(stddev=0.001),
-                    recurrent_initializer=initializers.Identity(gain=1.0),
-                    activation='relu',
-                    input_shape=x_train.shape[1:]))
+model.add(RNN(IndRNNCell(hidden_units),
+              input_shape=x_train.shape[1:],
+              return_sequences=True))
+model.add(BatchNormalization())
+model.add(RNN(IndRNNCell(hidden_units), return_sequences=True))
+model.add(BatchNormalization())
+model.add(RNN(IndRNNCell(hidden_units), return_sequences=True))
+model.add(BatchNormalization())
+model.add(RNN(IndRNNCell(hidden_units), return_sequences=True))
+model.add(BatchNormalization())
+model.add(RNN(IndRNNCell(hidden_units), return_sequences=True))
+model.add(BatchNormalization())
+model.add(RNN(IndRNNCell(hidden_units)))
+model.add(BatchNormalization())
 model.add(Dense(num_classes))
 model.add(Activation('softmax'))
-rmsprop = RMSprop(lr=learning_rate)
+adam = Adam(lr=learning_rate)
 model.compile(loss='categorical_crossentropy',
-              optimizer=rmsprop,
+              optimizer=adam,
               metrics=['accuracy'])
 
 model.fit(x_train, y_train,
