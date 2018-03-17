@@ -19,9 +19,7 @@ NUM_LAYERS = 6
 RECURRENT_MAX = pow(2, 1 / TIME_STEPS)
 NUM_CLASSES = 10
 
-# Parameters taken from https://arxiv.org/abs/1511.06464
 BATCH_SIZE = 50
-
 BN_FRAME_WISE = False
 CLIP_GRADIENTS = False
 
@@ -29,7 +27,7 @@ CLIP_GRADIENTS = False
 MNIST = input_data.read_data_sets("/tmp/data/")
 
 
-def get_bn_rnn(inputs, is_training=True):
+def get_bn_rnn(inputs, training):
   # Add a batch normalization layer after each
   layer_input = inputs
   layer_output = None
@@ -48,23 +46,26 @@ def get_bn_rnn(inputs, is_training=True):
       layer_output = tf.reshape(layer_output,
                                 [batch_size, TIME_STEPS * NUM_UNITS])
 
-    layer_output = tf.contrib.layers.batch_norm(layer_output,
-                                                is_training=is_training)
+    layer_output = tf.layers.batch_normalization(layer_output,
+                                                 training=training,
+                                                 scale=True)
+    # Undo the reshape above
     if BN_FRAME_WISE:
       layer_output = tf.reshape(layer_output,
                                 [batch_size, TIME_STEPS, NUM_UNITS])
 
-    if is_training:
-      # Tie the BN population statistics updates to the output op
-      update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-      with tf.control_dependencies(update_ops):
-        layer_output = tf.identity(layer_output)
+    # Tie the BN population statistics updates to the layer_output op
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    with tf.control_dependencies(update_ops):
+      layer_output = tf.identity(layer_output)
+
   return layer_output
 
 
 def build(inputs, labels):
   # Build the graph
-  output = get_bn_rnn(inputs)
+  training = tf.placeholder_with_default(True, [])
+  output = get_bn_rnn(inputs, training)
   last = output[:, -1, :]
 
   weight = tf.get_variable("softmax_weight", shape=[NUM_UNITS, NUM_CLASSES])
