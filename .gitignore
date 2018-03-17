@@ -170,5 +170,4 @@ venv.bak/
 
 # Custom stuff
 .idea
-local
 .DS_Store
