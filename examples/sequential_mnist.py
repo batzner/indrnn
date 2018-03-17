@@ -15,7 +15,7 @@ TIME_STEPS = 784
 NUM_UNITS = 128
 LEARNING_RATE_INIT = 0.0002
 LEARNING_RATE_DECAY_STEPS = 600000
-NUM_LAYERS = 6
+NUM_LAYERS = 2
 RECURRENT_MAX = pow(2, 1 / TIME_STEPS)
 NUM_CLASSES = 10
 
@@ -28,8 +28,12 @@ def main():
   inputs, labels = get_mnist_inputs(sess)
 
   # Build the graph
-  cell = MultiRNNCell([IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX)
-                       for _ in range(NUM_LAYERS)])
+  get_cell = lambda: IndRNNCell(NUM_UNITS,
+                                recurrent_max_abs=RECURRENT_MAX,
+                                batch_normalize=True)
+
+  cells = [get_cell() for _ in range(NUM_LAYERS)]
+  cell = tf.nn.rnn_cell.MultiRNNCell(cells)
 
   output, state = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32)
   last = output[:, -1, :]
@@ -40,7 +44,7 @@ def main():
   logits = tf.matmul(last, weight) + bias
 
   loss_op = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-    logits=logits, labels=labels))
+      logits=logits, labels=labels))
 
   global_step = tf.Variable(0, trainable=False)
   learning_rate = tf.train.exponential_decay(LEARNING_RATE_INIT, global_step,
@@ -52,31 +56,36 @@ def main():
   correct_pred = tf.equal(tf.argmax(logits, 1), labels)
   accuracy_op = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
+  bn_scale = cells[0]._batch_norm_scale
+  bn_offset = cells[0]._batch_norm_offset
+
   # Train the model
   sess.run(tf.global_variables_initializer())
   step = 0
   while True:
     losses = []
     accuracies = []
-    for _ in range(10):
+    for _ in range(1):
       loss, accuracy, _ = sess.run([loss_op, accuracy_op, optimize])
+      scale, offset = bn_scale.eval(sess), bn_offset.eval(sess)
+      print(scale[:10])
+      print(offset[:10])
       losses.append(loss)
       accuracies.append(accuracy)
       step += 1
 
-    #
     print("Step {} Loss {} Acc {}"
           .format(step, np.mean(losses), np.mean(accuracy)))
 
 
 def get_mnist_inputs(sess):
-  # From https://github.com/aymericdamien/TensorFlow-Examples/blob/master/examples/5_DataManagement/tensorflow_dataset_api.py
+  # Adapted from https://github.com/aymericdamien/TensorFlow-Examples/blob/master/examples/5_DataManagement/tensorflow_dataset_api.py
   # Import MNIST data (Numpy format)
   mnist = input_data.read_data_sets("/tmp/data/", one_hot=True)
 
   # Create a dataset tensor from the images and the labels
   dataset = tf.data.Dataset.from_tensor_slices(
-    (mnist.train.images, mnist.train.labels))
+      (mnist.train.images, mnist.train.labels))
   # Create batches of data
   dataset = dataset.batch(BATCH_SIZE)
   # Create an iterator, to go over the dataset
@@ -87,7 +96,7 @@ def get_mnist_inputs(sess):
   _labels = tf.placeholder(tf.float32, [None, NUM_CLASSES])
   # Initialize the iterator
   sess.run(iterator.initializer, feed_dict={_data: mnist.train.images,
-                                            _labels: mnist.train.labels})
+    _labels: mnist.train.labels})
   # Neural Net Input
   inputs, targets = iterator.get_next()
   return tf.expand_dims(inputs, -1), tf.argmax(targets, axis=1)

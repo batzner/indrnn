@@ -3,6 +3,7 @@
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import nn_ops
+from tensorflow.python.ops import nn_impl
 from tensorflow.python.ops import clip_ops
 from tensorflow.python.ops import rnn_cell_impl
 from tensorflow.python.layers import base as base_layer
@@ -47,6 +48,8 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
                recurrent_min_abs=0,
                recurrent_max_abs=None,
                recurrent_initializer=None,
+               batch_normalize=False,
+               batch_normalization_time_steps=None,
                activation=None,
                reuse=None,
                name=None):
@@ -59,11 +62,13 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
     self._recurrent_min_abs = recurrent_min_abs
     self._recurrent_max_abs = recurrent_max_abs
     self._recurrent_initializer = recurrent_initializer
+    self._bn = batch_normalize
+    self._bn_time_steps = batch_normalization_time_steps
     self._activation = activation or nn_ops.relu
 
   @property
   def state_size(self):
-    return self._num_units
+    return self._num_units, 1
 
   @property
   def output_size(self):
@@ -109,11 +114,20 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       self._recurrent_kernel = clip_ops.clip_by_value(self._recurrent_kernel,
                                                       -self._recurrent_max_abs,
                                                       self._recurrent_max_abs)
-
     self._bias = self.add_variable(
         "bias",
         shape=[self._num_units],
         initializer=init_ops.zeros_initializer(dtype=self.dtype))
+
+    self._batch_norm_offset = self.add_variable(
+        "batch_norm_offset",
+        shape=[self._num_units],
+        initializer=init_ops.zeros_initializer(dtype=self.dtype))
+
+    self._batch_norm_scale = self.add_variable(
+        "batch_norm_scale",
+        shape=[self._num_units],
+        initializer=init_ops.constant_initializer(1, dtype=self.dtype))
 
     self.built = True
 
@@ -135,9 +149,17 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       A tuple containing the output and new hidden state. Both are the same
         2-dimensional tensor of shape `[batch, num_units]`.
     """
+    hidden_state, step = state
+
     gate_inputs = math_ops.matmul(inputs, self._input_kernel)
-    recurrent_update = math_ops.multiply(state, self._recurrent_kernel)
+    recurrent_update = math_ops.multiply(hidden_state, self._recurrent_kernel)
     gate_inputs = math_ops.add(gate_inputs, recurrent_update)
     gate_inputs = nn_ops.bias_add(gate_inputs, self._bias)
     output = self._activation(gate_inputs)
-    return output, output
+
+    mean, variance = nn_impl.moments(output, axes=[0])
+    output = nn_impl.batch_normalization(
+        output, mean, variance, self._batch_norm_offset,
+        self._batch_norm_scale, variance_epsilon=0.001)
+
+    return output, (output, step+1)

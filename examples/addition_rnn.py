@@ -29,8 +29,8 @@ def main():
 
   # Build the graph
   cell = tf.nn.rnn_cell.MultiRNNCell([
-    IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX) for _ in
-    range(NUM_LAYERS)
+    IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX)
+    for _ in range(NUM_LAYERS)
   ])
   # cell = tf.nn.rnn_cell.BasicLSTMCell(NUM_UNITS) uncomment this for LSTM runs
 
