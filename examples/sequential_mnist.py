@@ -154,7 +154,7 @@ def main():
                                                            np.mean(accuracies)))
 
 
-def add_noise(inputs, labels):
+def add_gaussian_noise(inputs, labels):
   # Values taken https://github.com/cooijmanstim/recurrent-batch-normalization
   inputs = inputs + tf.random_normal(inputs.shape, mean=0.0, stddev=0.1)
   return inputs, labels
@@ -167,18 +167,22 @@ def preprocess_data(inputs, labels):
   return inputs, labels
 
 
-def get_iterators(handle, inputs_ph, labels_ph):
+def get_iterators(handle, inputs_ph, labels_ph, add_noise=True,
+                  batch_size=BATCH_SIZE, shuffle=True):
   training_dataset = tf.data.Dataset.from_tensor_slices((inputs_ph, labels_ph))
-  training_dataset = training_dataset.shuffle(buffer_size=1000)
-  # Apply random perturbations to the training data
-  training_dataset = training_dataset.map(add_noise).map(preprocess_data)
-  training_dataset = training_dataset.repeat().batch(BATCH_SIZE)
+  if shuffle:
+    training_dataset = training_dataset.shuffle(buffer_size=1000)
+  if add_noise:
+    # Apply random perturbations to the training data
+    training_dataset = training_dataset.map(add_gaussian_noise)
+  training_dataset = training_dataset.map(preprocess_data)
+  training_dataset = training_dataset.repeat().batch(batch_size)
 
   # Create the validation dataset
   validation_dataset = tf.data.Dataset.from_tensor_slices(
       (inputs_ph, labels_ph))
   validation_dataset = validation_dataset.map(preprocess_data)
-  validation_dataset = validation_dataset.batch(BATCH_SIZE)
+  validation_dataset = validation_dataset.batch(batch_size)
 
   # Create an iterator for switching between datasets
   iterator = tf.data.Iterator.from_string_handle(
