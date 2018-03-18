@@ -57,6 +57,7 @@ def get_bn_rnn(inputs, training):
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
       layer_output = tf.identity(layer_output)
+    layer_input = layer_output
 
   return layer_output
 
