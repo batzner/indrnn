@@ -118,6 +118,9 @@ def main():
   inputs, labels = main_iter.get_next()
   loss_op, accuracy_op, train_op, train_switch = build(inputs, labels)
 
+  # TensorBoard
+  writer = tf.summary.FileWriter('out/%s' % datetime.utcnow(), sess.graph)
+
   # Train the model
   sess.run(tf.global_variables_initializer())
 
@@ -126,7 +129,7 @@ def main():
     loss, accuracy, _ = sess.run([loss_op, accuracy_op, train_op],
                                  feed_dict={data_handle: train_handle})
 
-    if step % 10 == 0:
+    if step % 100 == 0:
       print('{} Step {} Loss {} Acc {}'.format(
           datetime.utcnow(), step + 1, loss, accuracy))
 
