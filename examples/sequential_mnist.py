@@ -4,10 +4,11 @@ The problem is described in https://arxiv.org/abs/1803.04831. The
 hyper-parameters are taken from that paper as well.
 """
 import itertools
+from datetime import datetime
+
 import tensorflow as tf
 import numpy as np
 from tensorflow.examples.tutorials.mnist import input_data
-from tensorflow.python.ops.rnn_cell_impl import MultiRNNCell
 
 from ind_rnn_cell import IndRNNCell
 
@@ -23,9 +24,6 @@ NUM_CLASSES = 10
 BATCH_SIZE = 50
 BN_FRAME_WISE = False
 CLIP_GRADIENTS = False
-
-# Import MNIST data (Numpy format)
-MNIST = input_data.read_data_sets("/tmp/data/")
 
 
 def get_bn_rnn(inputs, training):
@@ -65,8 +63,8 @@ def get_bn_rnn(inputs, training):
 
 def build(inputs, labels):
   # Build the graph
-  training = tf.placeholder_with_default(True, [])
-  output = get_bn_rnn(inputs, training)
+  is_training = tf.placeholder_with_default(True, [])
+  output = get_bn_rnn(inputs, is_training)
   last = output[:, -1, :]
 
   weight = tf.get_variable("softmax_weight", shape=[NUM_UNITS, NUM_CLASSES])
@@ -92,67 +90,94 @@ def build(inputs, labels):
 
   correct_pred = tf.equal(tf.argmax(logits, 1, output_type=tf.int32), labels)
   accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
-  return loss, accuracy, optimize
+  return loss, accuracy, optimize, is_training
 
 
 def main():
   sess = tf.Session()
-  data_handle = tf.placeholder(tf.string, shape=[])
 
-  # Neural Net Input
-  main_iter, training_iter, validation_iter = get_data(data_handle)
+  # Import MNIST data (Numpy format)
+  mnist = input_data.read_data_sets("/tmp/data/")
+
+  # Create placeholders for feeding the data
+  data_handle = tf.placeholder(tf.string, shape=[])
+  all_inputs_ph = tf.placeholder(mnist.train.images.dtype, [None, 784])
+  all_labels_ph = tf.placeholder(mnist.train.labels.dtype, [None])
+
+  main_iter, train_iter, valid_iter = get_iterators(data_handle,
+                                                    all_inputs_ph,
+                                                    all_labels_ph)
+  sess.run(train_iter.initializer, feed_dict={
+    all_inputs_ph: mnist.train.images,
+    all_labels_ph: mnist.train.labels})
+
   # Generate handles for each iterator
-  training_handle = sess.run(training_iter.string_handle())
-  validation_handle = sess.run(validation_iter.string_handle())
+  train_handle = sess.run(train_iter.string_handle())
+  valid_handle = sess.run(valid_iter.string_handle())
 
   inputs, labels = main_iter.get_next()
-  # TODO: Put these into the dataset preprocessing
-  inputs = tf.expand_dims(inputs, -1)  # expand to [BATCH_SIZE, TIME_STEPS, 1]
-  labels = tf.cast(labels, tf.int32)
-
-  loss_op, accuracy_op, train_op = build(inputs, labels)
+  loss_op, accuracy_op, train_op, train_switch = build(inputs, labels)
 
   # Train the model
   sess.run(tf.global_variables_initializer())
+
   for step in itertools.count():
     # Execute one training step
     loss, accuracy, _ = sess.run([loss_op, accuracy_op, train_op],
-                                 feed_dict={data_handle: training_handle})
+                                 feed_dict={data_handle: train_handle})
 
-    if step % 100 == 1:
-      print('Step {} Loss {} Acc {}'.format(step+1, loss, accuracy))
+    if step % 10 == 0:
+      print('{} Step {} Loss {} Acc {}'.format(
+          datetime.utcnow(), step + 1, loss, accuracy))
 
-    if step % 1000 == 0:
-      # Validation
+    if step % 500 == 0:
+      # Initialize the validation dataset
+      sess.run(valid_iter.initializer, feed_dict={
+        all_inputs_ph: mnist.validation.images,
+        all_labels_ph: mnist.validation.labels})
+
+      # Run one pass over the validation dataset.
       losses, accuracies = [], []
-      for _ in range(1000):
-        valid_loss, valid_accuracy = sess.run(
-            [loss_op, accuracy_op],
-            feed_dict={data_handle: validation_handle})
-        losses.append(valid_loss)
-        accuracies.append(valid_accuracy)
-      print('Step {} valid_loss {} valid_acc {}'
-            .format(step+1, np.mean(losses), np.mean(accuracies)))
+      while True:
+        try:
+          valid_loss, valid_accuracy = sess.run(
+              [loss_op, accuracy_op],
+              feed_dict={data_handle: valid_handle, train_switch: False})
+
+          losses.append(valid_loss)
+          accuracies.append(valid_accuracy)
+        except tf.errors.OutOfRangeError:
+          break
+      print('{} Step {} valid_loss {} valid_acc {}'.format(datetime.utcnow(),
+                                                           step + 1,
+                                                           np.mean(losses),
+                                                           np.mean(accuracies)))
 
 
 def add_noise(inputs, labels):
   # Values taken https://github.com/cooijmanstim/recurrent-batch-normalization
-  inputs = inputs + tf.random_normal([], mean=0.0, stddev=0.1, dtype=tf.float32)
+  inputs = inputs + tf.random_normal(inputs.shape, mean=0.0, stddev=0.1)
   return inputs, labels
 
 
-def get_data(handle):
-  training_dataset = tf.data.Dataset.from_tensor_slices(
-      (MNIST.train.images, MNIST.train.labels))
+def preprocess_data(inputs, labels):
+  # General preprocessing for train, valid and test dataset
+  inputs = tf.expand_dims(inputs, -1)  # expand to [?, TIME_STEPS, 1]
+  labels = tf.cast(labels, tf.int32)
+  return inputs, labels
+
+
+def get_iterators(handle, inputs_ph, labels_ph):
+  training_dataset = tf.data.Dataset.from_tensor_slices((inputs_ph, labels_ph))
+  training_dataset = training_dataset.shuffle(buffer_size=1000)
   # Apply random perturbations to the training data
-  training_dataset.map(add_noise)
-  training_dataset = training_dataset.repeat()
-  training_dataset = training_dataset.batch(BATCH_SIZE)
+  training_dataset = training_dataset.map(add_noise).map(preprocess_data)
+  training_dataset = training_dataset.repeat().batch(BATCH_SIZE)
 
   # Create the validation dataset
   validation_dataset = tf.data.Dataset.from_tensor_slices(
-      (MNIST.validation.images, MNIST.validation.labels))
-  validation_dataset = validation_dataset.repeat()
+      (inputs_ph, labels_ph))
+  validation_dataset = validation_dataset.map(preprocess_data)
   validation_dataset = validation_dataset.batch(BATCH_SIZE)
 
   # Create an iterator for switching between datasets
@@ -161,8 +186,8 @@ def get_data(handle):
 
   # Create iterators for each dataset that the main iterator can use for the
   # next element
-  training_iterator = training_dataset.make_one_shot_iterator()
-  validation_iterator = validation_dataset.make_one_shot_iterator()
+  training_iterator = training_dataset.make_initializable_iterator()
+  validation_iterator = validation_dataset.make_initializable_iterator()
   return iterator, training_iterator, validation_iterator
 
 
