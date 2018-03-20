@@ -101,9 +101,11 @@ def main():
   mnist = input_data.read_data_sets("/tmp/data/")
 
   # Create placeholders for feeding the data
-  data_handle = tf.placeholder(tf.string, shape=[])
-  all_inputs_ph = tf.placeholder(mnist.train.images.dtype, [None, 784])
-  all_labels_ph = tf.placeholder(mnist.train.labels.dtype, [None])
+  data_handle = tf.placeholder(tf.string, shape=[], name="data_handle")
+  all_inputs_ph = tf.placeholder(mnist.train.images.dtype, [None, 784],
+                                 name="all_inputs")
+  all_labels_ph = tf.placeholder(mnist.train.labels.dtype, [None],
+                                 name="all_labels")
 
   main_iter, train_iter, valid_iter = get_iterators(data_handle,
                                                     all_inputs_ph,
