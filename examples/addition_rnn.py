@@ -27,7 +27,10 @@ def main():
   targets_ph = tf.placeholder(tf.float32, shape=BATCH_SIZE)
 
   # Build the graph
-  first_layer = IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX)
+  first_input_init = tf.random_uniform_initializer(-RECURRENT_MAX,
+                                                   RECURRENT_MAX)
+  first_layer = IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX,
+                           recurrent_kernel_initializer=first_input_init)
   second_layer = IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX)
 
   cell = tf.nn.rnn_cell.MultiRNNCell([first_layer, second_layer])
