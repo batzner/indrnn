@@ -124,7 +124,7 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
     self.built = True
 
   def call(self, inputs, state):
-    """Run one step of the IndRNN.
+    """Run one time step of the IndRNN.
 
     Calculates the output and new hidden state using the IndRNN equation
 

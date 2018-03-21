@@ -2,7 +2,6 @@
 
 import numpy as np
 
-from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import variables
@@ -21,7 +20,7 @@ class IndRNNCellTest(test.TestCase):
       # Create the cell with input weights = 1 and constant recurrent weights
       recurrent_init = init_ops.constant_initializer([-3., -2., 1., 3.])
       input_init = init_ops.constant_initializer(1.)
-      cell = IndRNNCell(4,
+      cell = IndRNNCell(num_units=4,
                         recurrent_kernel_initializer=recurrent_init,
                         input_kernel_initializer=input_init,
                         activation=array_ops.identity)
@@ -43,7 +42,7 @@ class IndRNNCellTest(test.TestCase):
       # Create the cell with input weights = 1 and constant recurrent weights
       recurrent_init = init_ops.constant_initializer([-5., -2., 0.1, 5.])
       input_init = init_ops.constant_initializer(1.)
-      cell = IndRNNCell(4,
+      cell = IndRNNCell(num_units=4,
                         recurrent_min_abs=1.,
                         recurrent_max_abs=3.,
                         recurrent_kernel_initializer=recurrent_init,
