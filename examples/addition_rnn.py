@@ -2,7 +2,7 @@
 
 The addition problem is stated in https://arxiv.org/abs/1803.04831. The
 hyper-parameters are taken from that paper as well. The network should converge
-to a MSE around zero after 1500-20000 steps, depending on the number of time
+to a MSE around zero after 1000-20000 steps, depending on the number of time
 steps.
 """
 import tensorflow as tf
