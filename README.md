@@ -1,6 +1,6 @@
 # Independently Recurrent Neural Networks
 
-Simple TensorFlow implementation of [Independently Recurrent Neural Network (IndRNN): Building A Longer and Deeper RNN](https://arxiv.org/pdf/1803.04831.pdf) by Shuai Li et al.
+Simple TensorFlow implementation of [Independently Recurrent Neural Network (IndRNN): Building A Longer and Deeper RNN](https://arxiv.org/pdf/1803.04831.pdf) by Shuai Li et al. The author's original implementation in Theano and Lasagne can be found in [Sunnydreamrain/IndRNN_Theano_Lasagne](https://github.com/Sunnydreamrain/IndRNN_Theano_Lasagne).
 
 ## Summary
 
