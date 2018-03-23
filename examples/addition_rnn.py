@@ -2,7 +2,7 @@
 
 The addition problem is stated in https://arxiv.org/abs/1803.04831. The
 hyper-parameters are taken from that paper as well. The network should converge
-to a MSE around zero after 1500-20000 steps, depending on the number of time
+to a MSE around zero after 1000-20000 steps, depending on the number of time
 steps.
 """
 import tensorflow as tf
@@ -15,7 +15,6 @@ TIME_STEPS = 100
 NUM_UNITS = 128
 LEARNING_RATE_INIT = 0.0002
 LEARNING_RATE_DECAY_STEPS = 20000
-NUM_LAYERS = 2
 RECURRENT_MAX = pow(2, 1 / TIME_STEPS)
 
 # Parameters taken from https://arxiv.org/abs/1511.06464
@@ -28,10 +27,13 @@ def main():
   targets_ph = tf.placeholder(tf.float32, shape=BATCH_SIZE)
 
   # Build the graph
-  cell = tf.nn.rnn_cell.MultiRNNCell([
-    IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX)
-    for _ in range(NUM_LAYERS)
-  ])
+  first_input_init = tf.random_uniform_initializer(-RECURRENT_MAX,
+                                                   RECURRENT_MAX)
+  first_layer = IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX,
+                           recurrent_kernel_initializer=first_input_init)
+  second_layer = IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX)
+
+  cell = tf.nn.rnn_cell.MultiRNNCell([first_layer, second_layer])
   # cell = tf.nn.rnn_cell.BasicLSTMCell(NUM_UNITS) uncomment this for LSTM runs
 
   output, state = tf.nn.dynamic_rnn(cell, inputs_ph, dtype=tf.float32)
