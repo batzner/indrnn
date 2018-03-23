@@ -19,9 +19,10 @@ LEARNING_RATE_INIT = 0.0002
 LEARNING_RATE_DECAY_STEPS = 600000
 NUM_LAYERS = 6
 RECURRENT_MAX = pow(2, 1 / TIME_STEPS)
+LAST_LAYER_LOWER_BOUND = pow(0.5, 1 / TIME_STEPS)
 NUM_CLASSES = 10
 
-BATCH_SIZE = 50
+BATCH_SIZE = 32
 BN_FRAME_WISE = False
 CLIP_GRADIENTS = False
 
@@ -30,10 +31,16 @@ def get_bn_rnn(inputs, training):
   # Add a batch normalization layer after each
   layer_input = inputs
   layer_output = None
-  cells = []
-  for layer in range(NUM_LAYERS):
-    cell = IndRNNCell(NUM_UNITS, recurrent_max_abs=RECURRENT_MAX)
-    cells.append(cell)
+  input_init = tf.random_uniform_initializer(-0.001, 0.001)
+  for layer in range(1, NUM_LAYERS + 1):
+    recurrent_init_lower = 0 if layer < NUM_LAYERS else LAST_LAYER_LOWER_BOUND
+    recurrent_init = tf.random_uniform_initializer(recurrent_init_lower,
+                                                   RECURRENT_MAX)
+
+    cell = IndRNNCell(NUM_UNITS,
+                      recurrent_max_abs=RECURRENT_MAX,
+                      input_kernel_initializer=input_init,
+                      recurrent_kernel_initializer=recurrent_init)
     layer_output, _ = tf.nn.dynamic_rnn(cell, layer_input,
                                         dtype=tf.float32,
                                         scope="rnn%d" % layer)
@@ -68,9 +75,10 @@ def build(inputs, labels):
   output = get_bn_rnn(inputs, is_training)
   last = output[:, -1, :]
 
-  weight = tf.get_variable("softmax_weight", shape=[NUM_UNITS, NUM_CLASSES])
+  weight = tf.get_variable("softmax_weight", shape=[NUM_UNITS, NUM_CLASSES],
+                           initializer=tf.glorot_uniform_initializer())
   bias = tf.get_variable("softmax_bias", shape=[NUM_CLASSES],
-                         initializer=tf.constant_initializer(0.1))
+                         initializer=tf.constant_initializer(0.))
   logits = tf.matmul(last, weight) + bias
 
   loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -127,16 +135,23 @@ def main():
   # Train the model
   sess.run(tf.global_variables_initializer())
 
+  train_losses = []
+  train_accuracies = []
   for step in itertools.count():
     # Execute one training step
     loss, accuracy, _ = sess.run([loss_op, accuracy_op, train_op],
                                  feed_dict={data_handle: train_handle})
+    train_losses.append(loss)
+    train_accuracies.append(accuracy)
 
     if step % 100 == 0:
       print('{} Step {} Loss {} Acc {}'.format(
-          datetime.utcnow(), step + 1, loss, accuracy))
+          datetime.utcnow(), step + 1, np.mean(train_losses),
+          np.mean(train_accuracies)))
+      train_losses.clear()
+      train_accuracies.clear()
 
-    if step % 500 == 0:
+    if step % 1000 == 0:
       # Initialize the validation dataset
       sess.run(valid_iter.initializer, feed_dict={
         all_inputs_ph: mnist.validation.images,
@@ -168,12 +183,13 @@ def add_gaussian_noise(inputs, labels):
 
 def preprocess_data(inputs, labels):
   # General preprocessing for train, valid and test dataset
+  inputs = 2 * inputs - 1
   inputs = tf.expand_dims(inputs, -1)  # expand to [?, TIME_STEPS, 1]
   labels = tf.cast(labels, tf.int32)
   return inputs, labels
 
 
-def get_iterators(handle, inputs_ph, labels_ph, add_noise=True,
+def get_iterators(handle, inputs_ph, labels_ph, add_noise=False,
                   batch_size=BATCH_SIZE, shuffle=True):
   training_dataset = tf.data.Dataset.from_tensor_slices((inputs_ph, labels_ph))
   if shuffle:
