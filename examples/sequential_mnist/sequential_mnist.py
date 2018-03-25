@@ -23,7 +23,8 @@ LAST_LAYER_LOWER_BOUND = pow(0.5, 1 / TIME_STEPS)
 NUM_CLASSES = 10
 
 BATCH_SIZE = 32
-BN_FRAME_WISE = False
+BN_FRAME_WISE = True
+BN_MOMENTUM = 0.99 if BN_FRAME_WISE else 0.9
 CLIP_GRADIENTS = False
 
 
@@ -54,7 +55,7 @@ def get_bn_rnn(inputs, training):
 
     layer_output = tf.layers.batch_normalization(layer_output,
                                                  training=training,
-                                                 scale=True)
+                                                 momentum=BN_MOMENTUM)
     # Undo the reshape above
     if BN_FRAME_WISE:
       layer_output = tf.reshape(layer_output,
@@ -189,7 +190,7 @@ def preprocess_data(inputs, labels):
   return inputs, labels
 
 
-def get_iterators(handle, inputs_ph, labels_ph, add_noise=False,
+def get_iterators(handle, inputs_ph, labels_ph, add_noise=BN_FRAME_WISE,
                   batch_size=BATCH_SIZE, shuffle=True):
   training_dataset = tf.data.Dataset.from_tensor_slices((inputs_ph, labels_ph))
   if shuffle:

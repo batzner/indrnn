@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.python.platform import test
 import numpy as np
 
-from examples.sequential_mnist import get_iterators
+from examples.sequential_mnist.sequential_mnist import get_iterators
 
 
 class TestSequentialMnist(test.TestCase):
@@ -11,7 +11,7 @@ class TestSequentialMnist(test.TestCase):
     train_inputs = np.array([[1, 2], [3, 4], [5, 6]])
     train_labels = np.array([11, 12, 13])
 
-    expected_input_batches = [[[1, 2], [3, 4]], [[5, 6], [1, 2]]]
+    expected_input_batches = [[[1, 3], [5, 7]], [[9, 11], [1, 3]]]
     expected_input_batches = np.array(expected_input_batches).reshape(
         (2, 2, 2, 1))
     expected_input_labels = [[11, 12], [13, 11]]
@@ -23,8 +23,8 @@ class TestSequentialMnist(test.TestCase):
     main_iter, train_iter, _ = get_iterators(data_handle,
                                              all_inputs_ph,
                                              all_labels_ph,
-                                             add_noise=False,
                                              batch_size=batch_size,
+                                             add_noise=False,
                                              shuffle=False)
     sess = tf.Session()
     sess.run(train_iter.initializer, feed_dict={
@@ -52,7 +52,7 @@ class TestSequentialMnist(test.TestCase):
     valid_inputs = np.array([[1, 2], [3, 4], [5, 6]])
     valid_labels = np.array([11, 12, 13])
 
-    expected_input_batches = [[[[1], [2]], [[3], [4]]], [[[5], [6]]]]
+    expected_input_batches = [[[[1], [3]], [[5], [7]]], [[[9], [11]]]]
     expected_input_labels = [[11, 12], [13]]
 
     data_handle = tf.placeholder(tf.string, shape=[])
@@ -98,7 +98,7 @@ class TestSequentialMnist(test.TestCase):
     valid_inputs = np.random.rand(10, 2)
     valid_labels = np.random.rand(10)
 
-    expected_input_batches = [[[1, 2], [3, 4]], [[5, 6], [1, 2]]]
+    expected_input_batches = [[[1, 3], [5, 7]], [[9, 11], [1, 3]]]
     expected_input_batches = np.array(expected_input_batches).reshape(
         (2, 2, 2, 1))
     expected_input_labels = [[11, 12], [13, 11]]
