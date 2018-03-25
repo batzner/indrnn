@@ -8,9 +8,7 @@ from datetime import datetime
 
 import tensorflow as tf
 import numpy as np
-from tensorflow.contrib.layers import layer_norm
 from tensorflow.examples.tutorials.mnist import input_data
-from tensorflow.python.ops.rnn_cell_impl import MultiRNNCell
 
 from ind_rnn_cell import IndRNNCell
 
@@ -30,28 +28,52 @@ BN_MOMENTUM = 0.99 if BN_FRAME_WISE else 0.9
 CLIP_GRADIENTS = False
 
 
-def get_layer(index, is_training):
+def get_bn_rnn(inputs, training):
+  # Add a batch normalization layer after each
+  layer_input = inputs
+  layer_output = None
   input_init = tf.random_uniform_initializer(-0.001, 0.001)
-  recurrent_init_lower = 0 if index < NUM_LAYERS else LAST_LAYER_LOWER_BOUND
-  recurrent_init = tf.random_uniform_initializer(recurrent_init_lower,
-                                                 RECURRENT_MAX)
-  return IndRNNCell(NUM_UNITS,
-                    recurrent_max_abs=RECURRENT_MAX,
-                    input_kernel_initializer=input_init,
-                    recurrent_kernel_initializer=recurrent_init,
-                    is_training=is_training)
+  for layer in range(1, NUM_LAYERS + 1):
+    recurrent_init_lower = 0 if layer < NUM_LAYERS else LAST_LAYER_LOWER_BOUND
+    recurrent_init = tf.random_uniform_initializer(recurrent_init_lower,
+                                                   RECURRENT_MAX)
+
+    cell = IndRNNCell(NUM_UNITS,
+                      recurrent_max_abs=RECURRENT_MAX,
+                      input_kernel_initializer=input_init,
+                      recurrent_kernel_initializer=recurrent_init)
+    layer_output, _ = tf.nn.dynamic_rnn(cell, layer_input,
+                                        dtype=tf.float32,
+                                        scope="rnn%d" % layer)
+
+    # For frame-wise normalization, put the time steps dimension into the last
+    # dimension so that it doesn't get normalized
+    if BN_FRAME_WISE:
+      batch_size = tf.shape(layer_output)[0]
+      layer_output = tf.reshape(layer_output,
+                                [batch_size, TIME_STEPS * NUM_UNITS])
+
+    layer_output = tf.layers.batch_normalization(layer_output,
+                                                 training=training,
+                                                 momentum=BN_MOMENTUM)
+    # Undo the reshape above
+    if BN_FRAME_WISE:
+      layer_output = tf.reshape(layer_output,
+                                [batch_size, TIME_STEPS, NUM_UNITS])
+
+    # Tie the BN population statistics updates to the layer_output op
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    with tf.control_dependencies(update_ops):
+      layer_output = tf.identity(layer_output)
+    layer_input = layer_output
+
+  return layer_output
 
 
-def get_bn_rnn(inputs, is_training):
-  layers = [get_layer(i, is_training) for i in range(1, NUM_LAYERS + 1)]
-  cell = MultiRNNCell(layers)
-  output, _ = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32)
-  return output
-
-
-def build(inputs, labels, is_training):
+def build(inputs, labels):
   # Build the graph
-  output = get_bn_rnn(inputs, is_training=is_training)
+  is_training = tf.placeholder_with_default(True, [])
+  output = get_bn_rnn(inputs, is_training)
   last = output[:, -1, :]
 
   weight = tf.get_variable("softmax_weight", shape=[NUM_UNITS, NUM_CLASSES],
@@ -78,7 +100,7 @@ def build(inputs, labels, is_training):
 
   correct_pred = tf.equal(tf.argmax(logits, 1, output_type=tf.int32), labels)
   accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
-  return loss, accuracy, optimize
+  return loss, accuracy, optimize, is_training
 
 
 def main():
@@ -106,10 +128,7 @@ def main():
   valid_handle = sess.run(valid_iter.string_handle())
 
   inputs, labels = main_iter.get_next()
-  with tf.variable_scope('', reuse=tf.AUTO_REUSE):
-    train_loss_op, train_accuracy_op, train_op = build(inputs, labels,
-                                                       is_training=True)
-    test_loss_op, test_accuracy_op, _ = build(inputs, labels, is_training=False)
+  loss_op, accuracy_op, train_op, train_switch = build(inputs, labels)
 
   # TensorBoard
   writer = tf.summary.FileWriter('out/%s' % datetime.utcnow(), sess.graph)
@@ -121,7 +140,7 @@ def main():
   train_accuracies = []
   for step in itertools.count():
     # Execute one training step
-    loss, accuracy, _ = sess.run([train_loss_op, train_accuracy_op, train_op],
+    loss, accuracy, _ = sess.run([loss_op, accuracy_op, train_op],
                                  feed_dict={data_handle: train_handle})
     train_losses.append(loss)
     train_accuracies.append(accuracy)
@@ -144,8 +163,8 @@ def main():
       while True:
         try:
           valid_loss, valid_accuracy = sess.run(
-              [test_loss_op, test_accuracy_op],
-              feed_dict={data_handle: valid_handle})
+              [loss_op, accuracy_op],
+              feed_dict={data_handle: valid_handle, train_switch: False})
 
           losses.append(valid_loss)
           accuracies.append(valid_accuracy)
