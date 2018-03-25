@@ -8,6 +8,7 @@ from datetime import datetime
 
 import tensorflow as tf
 import numpy as np
+from tensorboardX import SummaryWriter
 from tensorflow.examples.tutorials.mnist import input_data
 
 from ind_rnn_cell import IndRNNCell
@@ -27,12 +28,14 @@ BATCH_SIZE_BN_STATS = 500
 BATCH_SIZE_VALID = 2000
 CLIP_GRADIENTS = True
 
-PHASE_TRAIN = 'train'
-PHASE_BN_STATS = 'bn_stats'
-PHASE_VALID = 'validation'
-PHASE_TEST = 'test'
+PHASE_TRAIN = "train"
+PHASE_BN_STATS = "bn_stats"
+PHASE_VALID = "validation"
+PHASE_TEST = "test"
 
 OUT_PATH = "out/%s/" % datetime.utcnow()
+LOG_PATH = OUT_PATH + "logs/"
+SAVE_PATH = OUT_PATH + "model.ckpt"
 
 # Import MNIST data (Numpy format)
 MNIST = input_data.read_data_sets("/tmp/data/")
@@ -53,6 +56,7 @@ def main():
   # Train the model
   sess.run(tf.global_variables_initializer())
   saver = tf.train.Saver()
+  writer = SummaryWriter(LOG_PATH)
 
   train_losses = []
   train_accuracies = []
@@ -63,9 +67,11 @@ def main():
         feed_dict={data_handle: handles[PHASE_TRAIN], phase: PHASE_TRAIN})
     train_losses.append(loss)
     train_accuracies.append(accuracy)
+    writer.add_scalar("train_loss", loss, step)
+    writer.add_scalar("train_accuracy", accuracy, step)
 
     if step % 100 == 0:
-      print('{} Step {} Loss {} Acc {}'.format(
+      print("{} Step {} Loss {} Acc {}".format(
           datetime.utcnow(), step + 1, np.mean(train_losses),
           np.mean(train_accuracies)))
       train_losses.clear()
@@ -81,7 +87,9 @@ def main():
       init_validation_set()
       feed_dict = {data_handle: handles[PHASE_VALID], phase: PHASE_VALID}
       loss, accuracy = evaluate(sess, loss_op, accuracy_op, feed_dict)
-      print('{} Step {} valid_loss {} valid_acc {}'.format(datetime.utcnow(),
+      writer.add_scalar("valid_loss", loss, step)
+      writer.add_scalar("valid_accuracy", accuracy, step)
+      print("{} Step {} valid_loss {} valid_acc {}".format(datetime.utcnow(),
                                                            step + 1,
                                                            loss,
                                                            accuracy))
@@ -90,15 +98,19 @@ def main():
         # Run the final test
         feed_dict = {data_handle: handles[PHASE_TEST], phase: PHASE_TEST}
         loss, accuracy = evaluate(sess, loss_op, accuracy_op, feed_dict)
-        print('{} Step {} test_loss {} test_acc {}'.format(datetime.utcnow(),
+        writer.add_scalar("test_loss", loss, step)
+        writer.add_scalar("test_accuracy", accuracy, step)
+        print("{} Step {} test_loss {} test_acc {}".format(datetime.utcnow(),
                                                            step + 1,
                                                            loss,
                                                            accuracy))
         # Exit
+        writer.close()
         return
 
     if step % 2000 == 0:
-      save_path = saver.save(sess, OUT_PATH + "model.ckpt")
+      # Save the model to disk
+      save_path = saver.save(sess, SAVE_PATH)
       print("Model saved in path: %s" % save_path)
 
 
