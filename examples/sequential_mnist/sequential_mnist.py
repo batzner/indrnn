@@ -23,13 +23,14 @@ LAST_LAYER_LOWER_BOUND = pow(0.5, 1 / TIME_STEPS)
 NUM_CLASSES = 10
 
 BATCH_SIZE_TRAIN = 32
-BATCH_SIZE_BN_STATS = 200
+BATCH_SIZE_BN_STATS = 500
 BATCH_SIZE_VALID = 2000
 CLIP_GRADIENTS = True
 
 PHASE_TRAIN = 'train'
 PHASE_BN_STATS = 'bn_stats'
 PHASE_VALID = 'validation'
+PHASE_TEST = 'test'
 
 # Import MNIST data (Numpy format)
 MNIST = input_data.read_data_sets("/tmp/data/")
@@ -75,21 +76,38 @@ def main():
 
       # Run one pass over the validation dataset.
       init_validation_set()
-      losses, accuracies = [], []
-      while True:
-        try:
-          valid_loss, valid_accuracy = sess.run(
-              [loss_op, accuracy_op],
-              feed_dict={data_handle: handles[PHASE_VALID], phase: PHASE_VALID})
-
-          losses.append(valid_loss)
-          accuracies.append(valid_accuracy)
-        except tf.errors.OutOfRangeError:
-          break
+      feed_dict = {data_handle: handles[PHASE_VALID], phase: PHASE_VALID}
+      loss, accuracy = evaluate(sess, loss_op, accuracy_op, feed_dict)
       print('{} Step {} valid_loss {} valid_acc {}'.format(datetime.utcnow(),
                                                            step + 1,
-                                                           np.mean(losses),
-                                                           np.mean(accuracies)))
+                                                           loss,
+                                                           accuracy))
+
+      if accuracy > 0.99:
+        # Run the final test
+        feed_dict = {data_handle: handles[PHASE_TEST], phase: PHASE_TEST}
+        loss, accuracy = evaluate(sess, loss_op, accuracy_op, feed_dict)
+        print('{} Step {} test_loss {} test_acc {}'.format(datetime.utcnow(),
+                                                           step + 1,
+                                                           loss,
+                                                           accuracy))
+        # Exit
+        return
+
+
+def evaluate(session, loss_op, accuracy_op, feed_dict):
+  losses, accuracies = [], []
+  while True:
+    try:
+      loss, accuracy = session.run(
+          [loss_op, accuracy_op],
+          feed_dict=feed_dict)
+
+      losses.append(loss)
+      accuracies.append(accuracy)
+    except tf.errors.OutOfRangeError:
+      break
+  return np.mean(losses), np.mean(accuracies)
 
 
 def build(inputs, labels, phase):
@@ -187,7 +205,7 @@ def get_bn_stats_set(inputs, labels):
   return dataset.repeat().batch(BATCH_SIZE_BN_STATS)
 
 
-def get_validation_set(inputs, labels):
+def get_prediction_set(inputs, labels):
   # Create the validation dataset
   dataset = tf.data.Dataset.from_tensor_slices((inputs, labels))
   dataset = dataset.map(preprocess_data)
@@ -202,7 +220,8 @@ def get_iterators(session, handle):
 
   training_dataset = get_training_set(inputs_ph, labels_ph)
   bn_stats_dataset = get_bn_stats_set(inputs_ph, labels_ph)
-  validation_dataset = get_validation_set(inputs_ph, labels_ph)
+  validation_dataset = get_prediction_set(inputs_ph, labels_ph)
+  test_dataset = get_prediction_set(inputs_ph, labels_ph)
 
   # Create an iterator for switching between datasets
   iterator = tf.data.Iterator.from_string_handle(
@@ -213,6 +232,7 @@ def get_iterators(session, handle):
   training_iterator = training_dataset.make_initializable_iterator()
   bn_stats_iterator = bn_stats_dataset.make_initializable_iterator()
   validation_iterator = validation_dataset.make_initializable_iterator()
+  test_iterator = test_dataset.make_initializable_iterator()
 
   # Initialize the datasets
   session.run(training_iterator.initializer, feed_dict={
@@ -221,6 +241,9 @@ def get_iterators(session, handle):
   session.run(bn_stats_iterator.initializer, feed_dict={
     inputs_ph: MNIST.train.images,
     labels_ph: MNIST.train.labels})
+  session.run(test_iterator.initializer, feed_dict={
+    inputs_ph: MNIST.test.images,
+    labels_ph: MNIST.test.labels})
 
   def init_validation_set():
     # Initialize the validation dataset
@@ -233,6 +256,7 @@ def get_iterators(session, handle):
     PHASE_TRAIN: session.run(training_iterator.string_handle()),
     PHASE_BN_STATS: session.run(bn_stats_iterator.string_handle()),
     PHASE_VALID: session.run(validation_iterator.string_handle()),
+    PHASE_TEST: session.run(test_iterator.string_handle())
   }
   return iterator, handles, init_validation_set
 
