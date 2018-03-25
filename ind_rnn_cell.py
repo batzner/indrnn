@@ -1,9 +1,12 @@
 """Module implementing the IndRNN cell"""
-
+from tensorflow import control_dependencies, int32
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import nn_ops
+from tensorflow.python.ops import nn_impl
 from tensorflow.python.ops import clip_ops
+from tensorflow.python.ops import logging_ops
+from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import rnn_cell_impl
 from tensorflow.python.layers import base as base_layer
 
@@ -57,6 +60,8 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
                recurrent_max_abs=None,
                recurrent_kernel_initializer=None,
                input_kernel_initializer=None,
+               is_training=True,
+               bn_max_steps=784,
                activation=None,
                reuse=None,
                name=None):
@@ -70,11 +75,13 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
     self._recurrent_max_abs = recurrent_max_abs
     self._recurrent_initializer = recurrent_kernel_initializer
     self._input_initializer = input_kernel_initializer
+    self._is_training = is_training
+    self._bn_max_steps = bn_max_steps
     self._activation = activation or nn_ops.relu
 
   @property
   def state_size(self):
-    return self._num_units
+    return [self._num_units, 1]
 
   @property
   def output_size(self):
@@ -121,6 +128,28 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
         shape=[self._num_units],
         initializer=init_ops.zeros_initializer(dtype=self.dtype))
 
+    self._offset = self.add_variable(
+        "offset",
+        shape=[self._bn_max_steps, self._num_units],
+        initializer=init_ops.zeros_initializer(dtype=self.dtype))
+
+    self._scale = self.add_variable(
+        "scale",
+        shape=[self._bn_max_steps, self._num_units],
+        initializer=init_ops.ones_initializer(dtype=self.dtype))
+
+    self._running_mean =  self.add_variable(
+        "running_mean",
+        shape=[self._bn_max_steps, self._num_units],
+        initializer=init_ops.zeros_initializer(dtype=self.dtype),
+        trainable=False)
+
+    self._running_var = self.add_variable(
+        "running_variance",
+        shape=[self._bn_max_steps, self._num_units],
+        initializer=init_ops.ones_initializer(dtype=self.dtype),
+        trainable=False)
+
     self.built = True
 
   def call(self, inputs, state):
@@ -141,9 +170,38 @@ class IndRNNCell(rnn_cell_impl._LayerRNNCell):
       A tuple containing the output and new hidden state. Both are the same
         2-D tensor of shape `[batch, num_units]`.
     """
+    hidden_state, step = state
+    _step = array_ops.squeeze(array_ops.gather(math_ops.cast(step, int32), 0))
+
     gate_inputs = math_ops.matmul(inputs, self._input_kernel)
-    recurrent_update = math_ops.multiply(state, self._recurrent_kernel)
+    recurrent_update = math_ops.multiply(hidden_state, self._recurrent_kernel)
     gate_inputs = math_ops.add(gate_inputs, recurrent_update)
     gate_inputs = nn_ops.bias_add(gate_inputs, self._bias)
     output = self._activation(gate_inputs)
-    return output, output
+
+    if self._is_training:
+      mean, var = nn_impl.moments(output, axes=[0])
+      output = nn_impl.batch_normalization(output,
+                                           mean=mean,
+                                           variance=var,
+                                           offset=self._offset[_step],
+                                           scale=self._scale[_step],
+                                           variance_epsilon=1e-4)
+      # Update the population statistics
+      new_mean = 0.99 * self._running_mean[_step] + 0.01 * mean
+      self._running_mean = self._running_mean[_step].assign(new_mean)
+      new_var = 0.99 * self._running_var[_step] + 0.01 * var
+      self._running_var = self._running_var[_step].assign(new_var)
+
+      with control_dependencies([self._running_mean, self._running_var]):
+        output = array_ops.identity(output)
+    else:
+      # Use the population statistics
+      output = nn_impl.batch_normalization(output,
+                                           mean=self._running_mean[_step],
+                                           variance=self._running_var[_step],
+                                           offset=self._offset[_step],
+                                           scale=self._scale[_step],
+                                           variance_epsilon=1e-4)
+
+    return output, [output, step+1]
