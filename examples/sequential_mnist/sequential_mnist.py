@@ -23,9 +23,9 @@ LAST_LAYER_LOWER_BOUND = pow(0.5, 1 / TIME_STEPS)
 NUM_CLASSES = 10
 
 BATCH_SIZE = 32
-BN_FRAME_WISE = True
+BN_FRAME_WISE = False
 BN_MOMENTUM = 0.99 if BN_FRAME_WISE else 0.9
-CLIP_GRADIENTS = False
+CLIP_GRADIENTS = True
 
 
 def get_bn_rnn(inputs, training):
@@ -130,9 +130,6 @@ def main():
   inputs, labels = main_iter.get_next()
   loss_op, accuracy_op, train_op, train_switch = build(inputs, labels)
 
-  # TensorBoard
-  writer = tf.summary.FileWriter('out/%s' % datetime.utcnow(), sess.graph)
-
   # Train the model
   sess.run(tf.global_variables_initializer())
 
@@ -191,7 +188,7 @@ def preprocess_data(inputs, labels):
 
 
 def get_iterators(handle, inputs_ph, labels_ph, add_noise=BN_FRAME_WISE,
-                  batch_size=BATCH_SIZE, shuffle=True):
+                  batch_size=BATCH_SIZE, valid_batch_size=2000, shuffle=True):
   training_dataset = tf.data.Dataset.from_tensor_slices((inputs_ph, labels_ph))
   if shuffle:
     training_dataset = training_dataset.shuffle(buffer_size=1000)
@@ -205,7 +202,7 @@ def get_iterators(handle, inputs_ph, labels_ph, add_noise=BN_FRAME_WISE,
   validation_dataset = tf.data.Dataset.from_tensor_slices(
       (inputs_ph, labels_ph))
   validation_dataset = validation_dataset.map(preprocess_data)
-  validation_dataset = validation_dataset.batch(batch_size)
+  validation_dataset = validation_dataset.batch(valid_batch_size)
 
   # Create an iterator for switching between datasets
   iterator = tf.data.Iterator.from_string_handle(

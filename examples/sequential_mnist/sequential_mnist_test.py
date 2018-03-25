@@ -24,6 +24,7 @@ class TestSequentialMnist(test.TestCase):
                                              all_inputs_ph,
                                              all_labels_ph,
                                              batch_size=batch_size,
+                                             valid_batch_size=batch_size,
                                              add_noise=False,
                                              shuffle=False)
     sess = tf.Session()
@@ -59,10 +60,12 @@ class TestSequentialMnist(test.TestCase):
     all_inputs_ph = tf.placeholder(tf.float32, [None, 2])
     all_labels_ph = tf.placeholder(tf.int32, [None])
 
-    main_iter, train_iter, valid_iter = get_iterators(data_handle,
-                                                      all_inputs_ph,
-                                                      all_labels_ph,
-                                                      batch_size=batch_size)
+    main_iter, train_iter, valid_iter = get_iterators(
+        data_handle,
+        all_inputs_ph,
+        all_labels_ph,
+        batch_size=batch_size,
+        valid_batch_size=batch_size)
     sess = tf.Session()
     sess.run(train_iter.initializer, feed_dict={
       all_inputs_ph: train_inputs,
@@ -107,12 +110,14 @@ class TestSequentialMnist(test.TestCase):
     all_inputs_ph = tf.placeholder(tf.float32, [None, 2])
     all_labels_ph = tf.placeholder(tf.int32, [None])
 
-    main_iter, train_iter, valid_iter = get_iterators(data_handle,
-                                                      all_inputs_ph,
-                                                      all_labels_ph,
-                                                      batch_size=batch_size,
-                                                      add_noise=False,
-                                                      shuffle=False)
+    main_iter, train_iter, valid_iter = get_iterators(
+        data_handle,
+        all_inputs_ph,
+        all_labels_ph,
+        batch_size=batch_size,
+        valid_batch_size=batch_size,
+        add_noise=False,
+        shuffle=False)
     sess = tf.Session()
     sess.run(train_iter.initializer, feed_dict={
       all_inputs_ph: train_inputs,
