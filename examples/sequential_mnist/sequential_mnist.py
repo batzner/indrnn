@@ -32,6 +32,8 @@ PHASE_BN_STATS = 'bn_stats'
 PHASE_VALID = 'validation'
 PHASE_TEST = 'test'
 
+OUT_PATH = "out/%s/" % datetime.utcnow()
+
 # Import MNIST data (Numpy format)
 MNIST = input_data.read_data_sets("/tmp/data/")
 
@@ -50,6 +52,7 @@ def main():
 
   # Train the model
   sess.run(tf.global_variables_initializer())
+  saver = tf.train.Saver()
 
   train_losses = []
   train_accuracies = []
@@ -93,6 +96,10 @@ def main():
                                                            accuracy))
         # Exit
         return
+
+    if step % 2000 == 0:
+      save_path = saver.save(sess, OUT_PATH + "model.ckpt")
+      print("Model saved in path: %s" % save_path)
 
 
 def evaluate(session, loss_op, accuracy_op, feed_dict):
