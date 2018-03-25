@@ -22,58 +22,79 @@ RECURRENT_MAX = pow(2, 1 / TIME_STEPS)
 LAST_LAYER_LOWER_BOUND = pow(0.5, 1 / TIME_STEPS)
 NUM_CLASSES = 10
 
-BATCH_SIZE = 32
-BN_FRAME_WISE = False
-BN_MOMENTUM = 0.99 if BN_FRAME_WISE else 0.9
+BATCH_SIZE_TRAIN = 32
+BATCH_SIZE_BN_STATS = 200
+BATCH_SIZE_VALID = 2000
 CLIP_GRADIENTS = True
 
+PHASE_TRAIN = 'train'
+PHASE_BN_STATS = 'bn_stats'
+PHASE_VALID = 'validation'
 
-def get_bn_rnn(inputs, training):
-  # Add a batch normalization layer after each
-  layer_input = inputs
-  layer_output = None
-  input_init = tf.random_uniform_initializer(-0.001, 0.001)
-  for layer in range(1, NUM_LAYERS + 1):
-    recurrent_init_lower = 0 if layer < NUM_LAYERS else LAST_LAYER_LOWER_BOUND
-    recurrent_init = tf.random_uniform_initializer(recurrent_init_lower,
-                                                   RECURRENT_MAX)
-
-    cell = IndRNNCell(NUM_UNITS,
-                      recurrent_max_abs=RECURRENT_MAX,
-                      input_kernel_initializer=input_init,
-                      recurrent_kernel_initializer=recurrent_init)
-    layer_output, _ = tf.nn.dynamic_rnn(cell, layer_input,
-                                        dtype=tf.float32,
-                                        scope="rnn%d" % layer)
-
-    # For frame-wise normalization, put the time steps dimension into the last
-    # dimension so that it doesn't get normalized
-    if BN_FRAME_WISE:
-      batch_size = tf.shape(layer_output)[0]
-      layer_output = tf.reshape(layer_output,
-                                [batch_size, TIME_STEPS * NUM_UNITS])
-
-    layer_output = tf.layers.batch_normalization(layer_output,
-                                                 training=training,
-                                                 momentum=BN_MOMENTUM)
-    # Undo the reshape above
-    if BN_FRAME_WISE:
-      layer_output = tf.reshape(layer_output,
-                                [batch_size, TIME_STEPS, NUM_UNITS])
-
-    # Tie the BN population statistics updates to the layer_output op
-    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-    with tf.control_dependencies(update_ops):
-      layer_output = tf.identity(layer_output)
-    layer_input = layer_output
-
-  return layer_output
+# Import MNIST data (Numpy format)
+MNIST = input_data.read_data_sets("/tmp/data/")
 
 
-def build(inputs, labels):
+def main():
+  sess = tf.Session()
+
+  # Create placeholders for feeding the data
+  data_handle = tf.placeholder(tf.string, shape=[], name="data_handle")
+  iterator, handles, init_validation_set = get_iterators(sess, data_handle)
+  inputs, labels = iterator.get_next()
+
+  # Build the graph depending on the current phase
+  phase = tf.placeholder(tf.string, shape=[], name="phase")
+  loss_op, accuracy_op, train_op = build(inputs, labels, phase)
+
+  # Train the model
+  sess.run(tf.global_variables_initializer())
+
+  train_losses = []
+  train_accuracies = []
+  for step in itertools.count():
+    # Execute one training step
+    loss, accuracy, _ = sess.run(
+        [loss_op, accuracy_op, train_op],
+        feed_dict={data_handle: handles[PHASE_TRAIN], phase: PHASE_TRAIN})
+    train_losses.append(loss)
+    train_accuracies.append(accuracy)
+
+    if step % 100 == 0:
+      print('{} Step {} Loss {} Acc {}'.format(
+          datetime.utcnow(), step + 1, np.mean(train_losses),
+          np.mean(train_accuracies)))
+      train_losses.clear()
+      train_accuracies.clear()
+
+    if step % 1000 == 0:
+      # Update the population statistics without changing the parameters
+      sess.run([loss_op], feed_dict={
+        data_handle: handles[PHASE_BN_STATS],
+        phase: PHASE_BN_STATS})
+
+      # Run one pass over the validation dataset.
+      init_validation_set()
+      losses, accuracies = [], []
+      while True:
+        try:
+          valid_loss, valid_accuracy = sess.run(
+              [loss_op, accuracy_op],
+              feed_dict={data_handle: handles[PHASE_VALID], phase: PHASE_VALID})
+
+          losses.append(valid_loss)
+          accuracies.append(valid_accuracy)
+        except tf.errors.OutOfRangeError:
+          break
+      print('{} Step {} valid_loss {} valid_acc {}'.format(datetime.utcnow(),
+                                                           step + 1,
+                                                           np.mean(losses),
+                                                           np.mean(accuracies)))
+
+
+def build(inputs, labels, phase):
   # Build the graph
-  is_training = tf.placeholder_with_default(True, [])
-  output = get_bn_rnn(inputs, is_training)
+  output = get_bn_rnn(inputs, phase=phase)
   last = output[:, -1, :]
 
   weight = tf.get_variable("softmax_weight", shape=[NUM_UNITS, NUM_CLASSES],
@@ -100,109 +121,88 @@ def build(inputs, labels):
 
   correct_pred = tf.equal(tf.argmax(logits, 1, output_type=tf.int32), labels)
   accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
-  return loss, accuracy, optimize, is_training
+  return loss, accuracy, optimize
 
 
-def main():
-  sess = tf.Session()
+def get_bn_rnn(inputs, phase):
+  # Add a batch normalization layer after each
+  layer_input = inputs
+  layer_output = None
+  input_init = tf.random_uniform_initializer(-0.001, 0.001)
+  for layer in range(1, NUM_LAYERS + 1):
+    recurrent_init_lower = 0 if layer < NUM_LAYERS else LAST_LAYER_LOWER_BOUND
+    recurrent_init = tf.random_uniform_initializer(recurrent_init_lower,
+                                                   RECURRENT_MAX)
 
-  # Import MNIST data (Numpy format)
-  mnist = input_data.read_data_sets("/tmp/data/")
+    cell = IndRNNCell(NUM_UNITS,
+                      recurrent_max_abs=RECURRENT_MAX,
+                      input_kernel_initializer=input_init,
+                      recurrent_kernel_initializer=recurrent_init)
+    layer_output, _ = tf.nn.dynamic_rnn(cell, layer_input,
+                                        dtype=tf.float32,
+                                        scope="rnn%d" % layer)
 
-  # Create placeholders for feeding the data
-  data_handle = tf.placeholder(tf.string, shape=[], name="data_handle")
-  all_inputs_ph = tf.placeholder(mnist.train.images.dtype, [None, 784],
-                                 name="all_inputs")
-  all_labels_ph = tf.placeholder(mnist.train.labels.dtype, [None],
-                                 name="all_labels")
+    is_training = tf.logical_or(tf.equal(phase, PHASE_TRAIN),
+                                tf.equal(phase, PHASE_BN_STATS))
+    layer_output = tf.layers.batch_normalization(layer_output,
+                                                 training=is_training,
+                                                 momentum=0)
 
-  main_iter, train_iter, valid_iter = get_iterators(data_handle,
-                                                    all_inputs_ph,
-                                                    all_labels_ph)
-  sess.run(train_iter.initializer, feed_dict={
-    all_inputs_ph: mnist.train.images,
-    all_labels_ph: mnist.train.labels})
+    # Tie the BN population statistics updates to the layer_output op
+    def update_population_stats():
+      update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+      with tf.control_dependencies(update_ops):
+        return tf.identity(layer_output)
 
-  # Generate handles for each iterator
-  train_handle = sess.run(train_iter.string_handle())
-  valid_handle = sess.run(valid_iter.string_handle())
+    layer_output = tf.cond(tf.equal(phase, PHASE_BN_STATS),
+                           true_fn=update_population_stats,
+                           false_fn=lambda: layer_output)
 
-  inputs, labels = main_iter.get_next()
-  loss_op, accuracy_op, train_op, train_switch = build(inputs, labels)
+    layer_input = layer_output
 
-  # Train the model
-  sess.run(tf.global_variables_initializer())
-
-  train_losses = []
-  train_accuracies = []
-  for step in itertools.count():
-    # Execute one training step
-    loss, accuracy, _ = sess.run([loss_op, accuracy_op, train_op],
-                                 feed_dict={data_handle: train_handle})
-    train_losses.append(loss)
-    train_accuracies.append(accuracy)
-
-    if step % 100 == 0:
-      print('{} Step {} Loss {} Acc {}'.format(
-          datetime.utcnow(), step + 1, np.mean(train_losses),
-          np.mean(train_accuracies)))
-      train_losses.clear()
-      train_accuracies.clear()
-
-    if step % 1000 == 0:
-      # Initialize the validation dataset
-      sess.run(valid_iter.initializer, feed_dict={
-        all_inputs_ph: mnist.validation.images,
-        all_labels_ph: mnist.validation.labels})
-
-      # Run one pass over the validation dataset.
-      losses, accuracies = [], []
-      while True:
-        try:
-          valid_loss, valid_accuracy = sess.run(
-              [loss_op, accuracy_op],
-              feed_dict={data_handle: valid_handle, train_switch: False})
-
-          losses.append(valid_loss)
-          accuracies.append(valid_accuracy)
-        except tf.errors.OutOfRangeError:
-          break
-      print('{} Step {} valid_loss {} valid_acc {}'.format(datetime.utcnow(),
-                                                           step + 1,
-                                                           np.mean(losses),
-                                                           np.mean(accuracies)))
-
-
-def add_gaussian_noise(inputs, labels):
-  # Values taken https://github.com/cooijmanstim/recurrent-batch-normalization
-  inputs = inputs + tf.random_normal(inputs.shape, mean=0.0, stddev=0.1)
-  return inputs, labels
+  return layer_output
 
 
 def preprocess_data(inputs, labels):
-  # General preprocessing for train, valid and test dataset
+  # General preprocessing for every dataset
   inputs = 2 * inputs - 1
   inputs = tf.expand_dims(inputs, -1)  # expand to [?, TIME_STEPS, 1]
   labels = tf.cast(labels, tf.int32)
   return inputs, labels
 
 
-def get_iterators(handle, inputs_ph, labels_ph, add_noise=BN_FRAME_WISE,
-                  batch_size=BATCH_SIZE, valid_batch_size=2000, shuffle=True):
-  training_dataset = tf.data.Dataset.from_tensor_slices((inputs_ph, labels_ph))
-  if shuffle:
-    training_dataset = training_dataset.shuffle(buffer_size=1000)
-  if add_noise:
-    # Apply random perturbations to the training data
-    training_dataset = training_dataset.map(add_gaussian_noise)
-  training_dataset = training_dataset.map(preprocess_data)
-  training_dataset = training_dataset.repeat().batch(batch_size)
+def get_training_set(inputs, labels):
+  # Create the training set
+  dataset = tf.data.Dataset.from_tensor_slices((inputs, labels))
+  dataset = dataset.shuffle(buffer_size=1000)
+  dataset = dataset.map(preprocess_data)
+  return dataset.repeat().batch(BATCH_SIZE_TRAIN)
 
+
+def get_bn_stats_set(inputs, labels):
+  # Create the "set BN stats" set
+  dataset = tf.data.Dataset.from_tensor_slices((inputs, labels))
+  dataset = dataset.shuffle(buffer_size=1000)
+  dataset = dataset.map(preprocess_data)
+  return dataset.repeat().batch(BATCH_SIZE_BN_STATS)
+
+
+def get_validation_set(inputs, labels):
   # Create the validation dataset
-  validation_dataset = tf.data.Dataset.from_tensor_slices(
-      (inputs_ph, labels_ph))
-  validation_dataset = validation_dataset.map(preprocess_data)
-  validation_dataset = validation_dataset.batch(valid_batch_size)
+  dataset = tf.data.Dataset.from_tensor_slices((inputs, labels))
+  dataset = dataset.map(preprocess_data)
+  return dataset.batch(BATCH_SIZE_VALID)
+
+
+def get_iterators(session, handle):
+  inputs_ph = tf.placeholder(MNIST.train.images.dtype, [None, 784],
+                             name="all_inputs")
+  labels_ph = tf.placeholder(MNIST.train.labels.dtype, [None],
+                             name="all_labels")
+
+  training_dataset = get_training_set(inputs_ph, labels_ph)
+  bn_stats_dataset = get_bn_stats_set(inputs_ph, labels_ph)
+  validation_dataset = get_validation_set(inputs_ph, labels_ph)
 
   # Create an iterator for switching between datasets
   iterator = tf.data.Iterator.from_string_handle(
@@ -211,8 +211,30 @@ def get_iterators(handle, inputs_ph, labels_ph, add_noise=BN_FRAME_WISE,
   # Create iterators for each dataset that the main iterator can use for the
   # next element
   training_iterator = training_dataset.make_initializable_iterator()
+  bn_stats_iterator = bn_stats_dataset.make_initializable_iterator()
   validation_iterator = validation_dataset.make_initializable_iterator()
-  return iterator, training_iterator, validation_iterator
+
+  # Initialize the datasets
+  session.run(training_iterator.initializer, feed_dict={
+    inputs_ph: MNIST.train.images,
+    labels_ph: MNIST.train.labels})
+  session.run(bn_stats_iterator.initializer, feed_dict={
+    inputs_ph: MNIST.train.images,
+    labels_ph: MNIST.train.labels})
+
+  def init_validation_set():
+    # Initialize the validation dataset
+    session.run(validation_iterator.initializer, feed_dict={
+      inputs_ph: MNIST.validation.images,
+      labels_ph: MNIST.validation.labels})
+
+  # Generate handles for each iterator
+  handles = {
+    PHASE_TRAIN: session.run(training_iterator.string_handle()),
+    PHASE_BN_STATS: session.run(bn_stats_iterator.string_handle()),
+    PHASE_VALID: session.run(validation_iterator.string_handle()),
+  }
+  return iterator, handles, init_validation_set
 
 
 if __name__ == "__main__":
