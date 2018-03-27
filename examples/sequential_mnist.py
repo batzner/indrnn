@@ -1,14 +1,22 @@
 """Module using IndRNNCell to solve the Sequential MNIST problem
 
-The problem is described in https://arxiv.org/abs/1803.04831. The
-hyper-parameters are taken from that paper as well.
+The approach is described in https://arxiv.org/abs/1803.04831. The
+hyper-parameters are taken from that paper as well as from its author's
+implementation: https://github.com/Sunnydreamrain/IndRNN_Theano_Lasagne
+
+The main difference to the original implementation is that this one does not
+use running averages to estimate the population statistics for batch
+normalization. Instead, it calculates them before every validation run with a
+large batch from the training set (see BATCH_SIZE_BN_STATS). This makes the
+validation metrics stable and expressive from the first training step on. For
+datasets larger than MNIST, the running averages should be preferred.
 """
 import itertools
+import os
 from datetime import datetime
 
 import tensorflow as tf
 import numpy as np
-from tensorboardX import SummaryWriter
 from tensorflow.examples.tutorials.mnist import input_data
 
 from ind_rnn_cell import IndRNNCell
@@ -20,22 +28,24 @@ LEARNING_RATE_INIT = 0.0002
 LEARNING_RATE_DECAY_STEPS = 600000
 NUM_LAYERS = 6
 RECURRENT_MAX = pow(2, 1 / TIME_STEPS)
-LAST_LAYER_LOWER_BOUND = pow(0.5, 1 / TIME_STEPS)
 NUM_CLASSES = 10
 
+# Parameters taken from https://github.com/Sunnydreamrain/IndRNN_Theano_Lasagne
+CLIP_GRADIENTS = True
+LAST_LAYER_LOWER_BOUND = pow(0.5, 1 / TIME_STEPS)
 BATCH_SIZE_TRAIN = 32
+
+# Custom parameters
 BATCH_SIZE_BN_STATS = 500
 BATCH_SIZE_VALID = 2000
-CLIP_GRADIENTS = True
 
 PHASE_TRAIN = "train"
 PHASE_BN_STATS = "bn_stats"
 PHASE_VALID = "validation"
 PHASE_TEST = "test"
 
-OUT_PATH = "out/%s/" % datetime.utcnow()
-LOG_PATH = OUT_PATH + "logs/"
-SAVE_PATH = OUT_PATH + "model.ckpt"
+OUT_DIR = "out/%s/" % datetime.utcnow()
+SAVE_PATH = OUT_DIR + "model.ckpt"
 
 # Import MNIST data (Numpy format)
 MNIST = input_data.read_data_sets("/tmp/data/")
@@ -44,19 +54,23 @@ MNIST = input_data.read_data_sets("/tmp/data/")
 def main():
   sess = tf.Session()
 
-  # Create placeholders for feeding the data
+  # Create a placeholder for switching between data sources (train, validation
+  # etc.) dynamically. Switching is done by feeding one of the entries in
+  # handles to the data_handle placeholder.
   data_handle = tf.placeholder(tf.string, shape=[], name="data_handle")
   iterator, handles, init_validation_set = get_iterators(sess, data_handle)
+  # inputs and labels can contain data from any of the datasets
   inputs, labels = iterator.get_next()
 
-  # Build the graph depending on the current phase
+  # Create a placeholder for executing different ops in the graph depending on
+  # the current phase (train, validation etc.) dynamically. Switching is done
+  # by feeding one of the PHASE_X constants to the phase placeholder.
   phase = tf.placeholder(tf.string, shape=[], name="phase")
   loss_op, accuracy_op, train_op = build(inputs, labels, phase)
 
   # Train the model
   sess.run(tf.global_variables_initializer())
   saver = tf.train.Saver()
-  writer = SummaryWriter(LOG_PATH)
 
   train_losses = []
   train_accuracies = []
@@ -67,8 +81,6 @@ def main():
         feed_dict={data_handle: handles[PHASE_TRAIN], phase: PHASE_TRAIN})
     train_losses.append(loss)
     train_accuracies.append(accuracy)
-    writer.add_scalar("train_loss", loss, step)
-    writer.add_scalar("train_accuracy", accuracy, step)
 
     if step % 100 == 0:
       print("{} Step {} Loss {} Acc {}".format(
@@ -77,18 +89,23 @@ def main():
       train_losses.clear()
       train_accuracies.clear()
 
+    if step % 2000 == 0:
+      # Save the model to disk
+      if not os.path.exists(OUT_DIR):
+        os.makedirs(OUT_DIR)
+      save_path = saver.save(sess, SAVE_PATH)
+      print("Model saved in path: %s" % save_path)
+
     if step % 1000 == 0:
-      # Update the population statistics without changing the parameters
+      # Update the population statistics without learning / changing the weights
       sess.run([loss_op], feed_dict={
         data_handle: handles[PHASE_BN_STATS],
         phase: PHASE_BN_STATS})
 
-      # Run one pass over the validation dataset.
+      # Run one pass over the validation dataset
       init_validation_set()
       feed_dict = {data_handle: handles[PHASE_VALID], phase: PHASE_VALID}
       loss, accuracy = evaluate(sess, loss_op, accuracy_op, feed_dict)
-      writer.add_scalar("valid_loss", loss, step)
-      writer.add_scalar("valid_accuracy", accuracy, step)
       print("{} Step {} valid_loss {} valid_acc {}".format(datetime.utcnow(),
                                                            step + 1,
                                                            loss,
@@ -98,23 +115,22 @@ def main():
         # Run the final test
         feed_dict = {data_handle: handles[PHASE_TEST], phase: PHASE_TEST}
         loss, accuracy = evaluate(sess, loss_op, accuracy_op, feed_dict)
-        writer.add_scalar("test_loss", loss, step)
-        writer.add_scalar("test_accuracy", accuracy, step)
         print("{} Step {} test_loss {} test_acc {}".format(datetime.utcnow(),
                                                            step + 1,
                                                            loss,
                                                            accuracy))
         # Exit
-        writer.close()
         return
-
-    if step % 2000 == 0:
-      # Save the model to disk
-      save_path = saver.save(sess, SAVE_PATH)
-      print("Model saved in path: %s" % save_path)
 
 
 def evaluate(session, loss_op, accuracy_op, feed_dict):
+  """Evaluate the model.
+
+  Computes the loss and accuracy with repeated calls with the specified
+  feed_dict. Halts, when session.run raises an tf.errors.OutOfRangeError (i.e.
+  the whole dataset was iterated trough once and returns the average loss and
+  accuracy.
+  """
   losses, accuracies = [], []
   while True:
     try:
@@ -130,15 +146,14 @@ def evaluate(session, loss_op, accuracy_op, feed_dict):
 
 
 def build(inputs, labels, phase):
-  # Build the graph
-  output = get_bn_rnn(inputs, phase=phase)
-  last = output[:, -1, :]
-
+  # Build the graph from inputs and labels down to the loss, accuracy and
+  # training step ops.
+  rnn_output = build_rnn(inputs, phase=phase)
   weight = tf.get_variable("softmax_weight", shape=[NUM_UNITS, NUM_CLASSES],
                            initializer=tf.glorot_uniform_initializer())
   bias = tf.get_variable("softmax_bias", shape=[NUM_CLASSES],
                          initializer=tf.constant_initializer(0.))
-  logits = tf.matmul(last, weight) + bias
+  logits = tf.matmul(rnn_output, weight) + bias
 
   loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
       logits=logits, labels=labels))
@@ -161,20 +176,24 @@ def build(inputs, labels, phase):
   return loss, accuracy, optimize
 
 
-def get_bn_rnn(inputs, phase):
-  # Add a batch normalization layer after each
+def build_rnn(inputs, phase):
+  # Build the RNN with sequence-wise batch normalization. We cannot use
+  # MultiRNNCell here, because we have to add batch normalization layers after
+  # each RNN layer. Thus, we need to unroll each RNN layer separately.
   layer_input = inputs
   layer_output = None
   input_init = tf.random_uniform_initializer(-0.001, 0.001)
   for layer in range(1, NUM_LAYERS + 1):
+    # Init only the last layer's recurrent weights around 1
     recurrent_init_lower = 0 if layer < NUM_LAYERS else LAST_LAYER_LOWER_BOUND
     recurrent_init = tf.random_uniform_initializer(recurrent_init_lower,
                                                    RECURRENT_MAX)
-
+    # Build the layer
     cell = IndRNNCell(NUM_UNITS,
                       recurrent_max_abs=RECURRENT_MAX,
                       input_kernel_initializer=input_init,
                       recurrent_kernel_initializer=recurrent_init)
+    # Unroll the layer
     layer_output, _ = tf.nn.dynamic_rnn(cell, layer_input,
                                         dtype=tf.float32,
                                         scope="rnn%d" % layer)
@@ -185,7 +204,8 @@ def get_bn_rnn(inputs, phase):
                                                  training=is_training,
                                                  momentum=0)
 
-    # Tie the BN population statistics updates to the layer_output op
+    # Tie the BN population statistics updates to the layer_output op only, when
+    # we are in the PHASE_BN_STATS phase
     def update_population_stats():
       update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
       with tf.control_dependencies(update_ops):
@@ -197,7 +217,9 @@ def get_bn_rnn(inputs, phase):
 
     layer_input = layer_output
 
-  return layer_output
+  # Return the output of the last layer in the last time step
+  # layer_output has shape [?, TIME_STEPS, NUM_UNITS]
+  return layer_output[:, -1, :]
 
 
 def preprocess_data(inputs, labels):
@@ -225,13 +247,14 @@ def get_bn_stats_set(inputs, labels):
 
 
 def get_prediction_set(inputs, labels):
-  # Create the validation dataset
+  # Create the validation or test dataset
   dataset = tf.data.Dataset.from_tensor_slices((inputs, labels))
   dataset = dataset.map(preprocess_data)
   return dataset.batch(BATCH_SIZE_VALID)
 
 
 def get_iterators(session, handle):
+  # Create iterators for the training, "set BN stats", validation and test set
   inputs_ph = tf.placeholder(MNIST.train.images.dtype, [None, 784],
                              name="all_inputs")
   labels_ph = tf.placeholder(MNIST.train.labels.dtype, [None],
@@ -253,7 +276,7 @@ def get_iterators(session, handle):
   validation_iterator = validation_dataset.make_initializable_iterator()
   test_iterator = test_dataset.make_initializable_iterator()
 
-  # Initialize the datasets
+  # Initialize iterators with their corresponding datasets
   session.run(training_iterator.initializer, feed_dict={
     inputs_ph: MNIST.train.images,
     labels_ph: MNIST.train.labels})
@@ -264,13 +287,16 @@ def get_iterators(session, handle):
     inputs_ph: MNIST.test.images,
     labels_ph: MNIST.test.labels})
 
+  # The validation set is not endless like the training or set-BN-stats set. It
+  # needs to be reinitialized for every validation run. Create a function for
+  # initializing it and pass that to the calling function.
   def init_validation_set():
-    # Initialize the validation dataset
     session.run(validation_iterator.initializer, feed_dict={
       inputs_ph: MNIST.validation.images,
       labels_ph: MNIST.validation.labels})
 
-  # Generate handles for each iterator
+  # Generate handles for each iterator. These can be fed to the handle
+  # placeholder for switching dynamically between datasets
   handles = {
     PHASE_TRAIN: session.run(training_iterator.string_handle()),
     PHASE_BN_STATS: session.run(bn_stats_iterator.string_handle()),
