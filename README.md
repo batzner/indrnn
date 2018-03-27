@@ -28,15 +28,19 @@ output, state = tf.nn.dynamic_rnn(cell, input_data, dtype=tf.float32)
 ```
 ## Experiments in the paper
 
+### Addition Problem
+
 See [examples/addition_rnn.py](https://github.com/batzner/indrnn/blob/master/examples/addition_rnn.py) for a script reproducing the "Adding Problem" from the paper. Below are the results reproduced with the `addition_rnn.py` code.
 
 ![https://github.com/batzner/indrnn/raw/master/img/addition/TAll.png](https://github.com/batzner/indrnn/raw/master/img/addition/TAll.png)
  
-See [examples/sequential_mnist.py](https://github.com/batzner/indrnn/blob/master/examples/sequential_mnist.py) for a script reproducing the Sequential MNIST experiment. I let it run for two days and stopped after 60,000 training steps with:
+### Sequential MNIST
+
+See [examples/sequential_mnist.py](https://github.com/batzner/indrnn/blob/master/examples/sequential_mnist.py) for a script reproducing the Sequential MNIST experiment. I let it run for two days and stopped it after 60,000 training steps with:
 
 - Training error rate of 0.7%
 - Validation error rate of 1.1%
-- Test error rate of 1.1%
+- **Test error rate of 1.1%**
 
 ![https://github.com/batzner/indrnn/raw/master/img/sequential_mnist/errors.png](https://github.com/batzner/indrnn/raw/master/img/sequential_mnist/errors.png)
 
