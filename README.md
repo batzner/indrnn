@@ -32,7 +32,14 @@ See [examples/addition_rnn.py](https://github.com/batzner/indrnn/blob/master/exa
 
 ![https://github.com/batzner/indrnn/raw/master/img/addition/TAll.png](https://github.com/batzner/indrnn/raw/master/img/addition/TAll.png)
  
-More experiments, such as Sequential MNIST, will follow in the next days.
+See [examples/sequential_mnist.py](https://github.com/batzner/indrnn/blob/master/examples/sequential_mnist.py) for a script reproducing the Sequential MNIST experiment. I let it run for two days and stopped after 60,000 training steps with:
+
+- Training error rate of 0.7%
+- Validation error rate of 1.1%
+- Test error rate of 1.1%
+
+![https://github.com/batzner/indrnn/raw/master/img/sequential_mnist/errors.png](https://github.com/batzner/indrnn/raw/master/img/sequential_mnist/errors.png | width=400)
+
 
 ## Requirements
 - Python 3.4+
