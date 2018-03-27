@@ -38,7 +38,7 @@ See [examples/sequential_mnist.py](https://github.com/batzner/indrnn/blob/master
 - Validation error rate of 1.1%
 - Test error rate of 1.1%
 
-![https://github.com/batzner/indrnn/raw/master/img/sequential_mnist/errors.png](https://github.com/batzner/indrnn/raw/master/img/sequential_mnist/errors.png | width=400)
+![https://github.com/batzner/indrnn/raw/master/img/sequential_mnist/errors.png](https://github.com/batzner/indrnn/raw/master/img/sequential_mnist/errors.png)
 
 
 ## Requirements
