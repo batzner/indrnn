@@ -36,7 +36,7 @@ See [examples/addition_rnn.py](https://github.com/batzner/indrnn/blob/master/exa
  
 ### Sequential MNIST
 
-See [examples/sequential_mnist.py](https://github.com/batzner/indrnn/blob/master/examples/sequential_mnist.py) for a script reproducing the Sequential MNIST experiment. I let it run for two days and stopped it after 60,000 training steps with:
+See [examples/sequential_mnist.py](https://github.com/batzner/indrnn/blob/master/examples/sequential_mnist.py) for a script reproducing the Sequential MNIST experiment. I let it run for two days and stopped it after 60,000 training steps with a
 
 - Training error rate of 0.7%
 - Validation error rate of 1.1%
