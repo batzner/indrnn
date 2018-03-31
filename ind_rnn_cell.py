@@ -4,11 +4,16 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import clip_ops
-from tensorflow.python.ops import rnn_cell_impl
 from tensorflow.python.layers import base as base_layer
 
+try:
+  # TF 1.7+
+  from tensorflow.python.ops.rnn_cell_impl import LayerRNNCell
+except ImportError:
+  from tensorflow.python.ops.rnn_cell_impl import _LayerRNNCell as LayerRNNCell
 
-class IndRNNCell(rnn_cell_impl._LayerRNNCell):
+
+class IndRNNCell(LayerRNNCell):
   """Independently RNN Cell. Adapted from `rnn_cell_impl.BasicRNNCell`.
 
   Each unit has a single recurrent weight connected to its last hidden state.
