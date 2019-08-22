@@ -1,0 +1,15 @@
+language: python
+python:
+  - '3.4'
+  - '3.5'
+  - '3.6'
+env:
+  - TENSORFLOW_VERSION=
+  - TENSORFLOW_VERSION=1.5.*
+install:
+  - if [[ ! -z "$TENSORFLOW_VERSION" ]]; then
+      pip install tensorflow==$TENSORFLOW_VERSION;
+    fi
+  - pip install -r requirements.txt
+script:
+  - pytest
