@@ -183,6 +183,8 @@ def build_rnn(inputs, phase):
   layer_input = inputs
   layer_output = None
   input_init = tf.random_uniform_initializer(-0.001, 0.001)
+  is_training = tf.logical_or(tf.equal(phase, PHASE_TRAIN),
+                              tf.equal(phase, PHASE_BN_STATS))
   for layer in range(1, NUM_LAYERS + 1):
     # Init only the last layer's recurrent weights around 1
     recurrent_init_lower = 0 if layer < NUM_LAYERS else LAST_LAYER_LOWER_BOUND
@@ -198,8 +200,6 @@ def build_rnn(inputs, phase):
                                         dtype=tf.float32,
                                         scope="rnn%d" % layer)
 
-    is_training = tf.logical_or(tf.equal(phase, PHASE_TRAIN),
-                                tf.equal(phase, PHASE_BN_STATS))
     layer_output = tf.layers.batch_normalization(layer_output,
                                                  training=is_training,
                                                  momentum=0)
